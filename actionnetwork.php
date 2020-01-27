@@ -28,8 +28,6 @@ if (!class_exists('ActionNetwork_Sync')) {
  * Set up options
  */
 add_option( 'actionnetwork_api_key', null );
-add_option( 'actionnetwork_api_key_child_1', null );
-add_option( 'actionnetwork_api_key_child_2', null );
 
 /**
  * Installation, database setup
@@ -115,12 +113,13 @@ function actionnetwork_install() {
 		$table_name = $wpdb->prefix . 'actionnetwork';
 		$charset_collate = $wpdb->get_charset_collate();
 
-		//Adding additional columns for child groups.
-		//an_g1_id, an_cg2_id, etc.
+		//Adding additional column, g_id, for group api keys.
+		//The group api key will live with the object and be injected into calls to the api
 
 		$sql = "CREATE TABLE $table_name (
 			wp_id mediumint(9) NOT NULL AUTO_INCREMENT,
 			an_id varchar(64) DEFAULT '' NOT NULL,
+			g_id varchar(64) DEFAULT '' NOT NULL,
 			type varchar(24) DEFAULT '' NOT NULL, 
 			name varchar(255) DEFAULT '' NOT NULL,
 			title varchar (255) DEFAULT '' NOT NULL,
@@ -150,10 +149,18 @@ function actionnetwork_install() {
 			PRIMARY KEY  (resource_id)
 		) $charset_collate;";
 
+		$table_name_groups = $wpdb->prefix . 'actionnetwork_groups';
+		$sql_groups = "CREATE TABLE $table_name_groups (
+			id bigint(2) NOT NULL AUTO_INCREMENT,
+			api_key varchar(64) NOT NULL ''
+			PRIMARY KEY  (id)
+		) $charset_collate;";
+
 		require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
 		
 		dbDelta( $sql );
 		dbDelta( $sql_queue );
+		dbDelta( $sql_groups);
 
 		update_option( 'actionnetwork_db_version', $actionnetwork_db_version );
 
@@ -192,8 +199,6 @@ function actionnetwork_uninstall() {
 		'actionnetwork_db_version',
 		'actionnetwork_deferred_admin_notices',
 		'actionnetwork_api_key',
-		'actionnetwork_api_key_child_1',
-		'actionnetwork_api_key_child_2',
 		'actionnetwork_cache_timestamp',
 		'actionnetwork_queue_status',
 		'actionnetwork_cron_token',
@@ -726,15 +731,7 @@ function _actionnetwork_admin_handle_actions(){
 		case 'update_api_key':
 
 		//Adding for loop to iterate through child groups as well
-		
-		$groups_api_key_names = array(
-				'actionnetwork_api_key',
-				'actionnetwork_api_key_child_1',
-				'actionnetwork_api_key_child_2'
-			);
 
-		foreach($groups_api_key_names as $api_key_name) {
-		
 			$debug = "update_api_key case matched\n";
 			
 			$actionnetwork_api_key = sanitize_key($_REQUEST[$api_key_name]);
@@ -820,7 +817,6 @@ function _actionnetwork_admin_handle_actions(){
 					
 					}
 				
-				}
 				}
 			}
 		break;
@@ -1218,7 +1214,7 @@ function actionnetwork_admin_page() {
 		'pressCtrlCToCopy' => __( 'please press Ctrl/Cmd+C to copy', 'actionnetwork' ),
 		'clearResults' => __( 'clear results', 'actionnetwork' ),
 		'changeAPIKey' => __( 'Change or delete API key', 'actionnetwork' ),
-		'confirmChangeAPIKey' => __( 'Are you sure you want to change or delete the API key? Doing so means any actions you have synced via the API will be deleted.', 'actionnetwork' ),
+		'confirmChangeAPIKey' => __( 'Are you sure you want to change or FUCK delete the API key? Doing so means any actions you have synced via the API will be deleted.', 'actionnetwork' ),
 		/* translators: %s: date of last sync */
 		'lastSynced' => __( 'Last synced %s', 'actionnetwork' ),
 	);

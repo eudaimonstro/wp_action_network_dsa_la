@@ -8,21 +8,30 @@
  */
 
 class ActionNetwork {
-
-	private $api_key = 'PASS_API_KEY_WHEN_INSTANTIATING_CLASS';
 	private $api_version = '2';
 	private $api_base_url = 'https://actionnetwork.org/api/v2/';
+	private $groups = [];
 
-	public function __construct($api_key = null) {
+	public function __construct() {
+		global $wpdb;
+
+		$sql = "SELECT * FROM {$wpdb->prefix}actionnetwork_groups";
+		$groups = $wpdb->get_results( $sql, ARRAY_A );
+
 		if(!extension_loaded('curl')) trigger_error('ActionNetwork requires PHP cURL', E_USER_ERROR);
-		if(is_null($api_key)) trigger_error('api key must be supplied', E_USER_ERROR);
-		$this->api_key = $api_key;
 	}
 
 	public function call($endpoint, $method = 'GET', $object = null) {
 		
 		// if endpoint is passed as an absolute URL (i.e., if it came from an API response), remove the base URL
 		$endpoint = str_replace($this->api_base_url,'',$endpoint);
+
+		if (isset($object->g_id)){
+			$api_key = $object->g_id;
+			unset($object->g_id);
+		} else {
+			trigger_error('no api key associated with object', E_USER_ERROR);
+		}
 
 		$ch = curl_init();
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
@@ -33,13 +42,13 @@ class ActionNetwork {
 				$json = json_encode($object);
 				curl_setopt($ch, CURLOPT_POSTFIELDS, $json);
 				curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-					'OSDI-API-Token: '.$this->api_key,
+					'OSDI-API-Token: '.$api_key,
 					'Content-Type: application/json',
 					'Content-Length: ' . strlen($json))
 				);
 			}
 		} else {
-			curl_setopt($ch, CURLOPT_HTTPHEADER, array('OSDI-API-Token:'.$this->api_key));
+			curl_setopt($ch, CURLOPT_HTTPHEADER, array('OSDI-API-Token:'.$api_key));
 		}
 		curl_setopt($ch, CURLOPT_URL, $this->api_base_url.$endpoint);
 

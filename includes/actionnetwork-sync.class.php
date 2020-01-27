@@ -10,8 +10,7 @@ class Actionnetwork_Sync extends ActionNetwork {
 	private $endpoints = array( 'petitions', 'events', 'fundraising_pages', 'advocacy_campaigns', 'forms' );
 	
 	function __construct() {
-		$api_key = get_option( 'actionnetwork_api_key' );
-		parent::__construct( $api_key );
+		parent::__construct();
 		$this->processStartTime = time();
 	}
 	
