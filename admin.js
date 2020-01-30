@@ -76,7 +76,7 @@ jQuery(document).ready(function($) {
 	/**
 	 * If there is an existing API Key, make sure user is sure they want to change it
 	 */
-	if (($('#actionnetwork_api_key').length && $('#actionnetwork_api_key').val().length) || ($('#actionnetwork_api_key_child_1').length && $('#actionnetwork_api_key_child_1').val().length) || ($('#actionnetwork_api_key_child_2').length && $('#actionnetwork_api_key_child_2').val().length)) {
+	if ($('#actionnetwork_api_key').length && $('#actionnetwork_api_key').val().length)  {
 		$('#actionnetwork_api_key').attr('readonly', 'readonly');
 		$('#actionnetwork_api_key').after('<button id="actionnetwork_api_key_change">' + actionnetworkText.changeAPIKey + '</button>');
 		$('#actionnetwork_api_key_change').click(function(event) {
@@ -87,6 +87,12 @@ jQuery(document).ready(function($) {
 			}
 		});
 	}
+	$('#actionnetwork-options-form-add-api-key').click(function(event){
+		event.preventDefault();
+		apiNumber = $('.actionnetwork-api-key').length + 1;
+		tag = "<tr valign='top'><td><input id='actionnetwork-api-key-" + apiNumber + "' class='actionnetwork-api-key' name='actionnetwork-api-key-" + apiNumber + "' type='text' /></td></tr>";
+		$('#api_keys').append(tag);
+	})
 	/**
 	 * If there is a "sync-started" notice, update it via ajax
 	 */

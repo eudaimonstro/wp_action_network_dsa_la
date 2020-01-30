@@ -206,7 +206,7 @@ EOHTML;
 	function get_actions( $per_page = 20, $page_number = 1 ) {
 
 		global $wpdb;
-		$sql = "SELECT * FROM {$wpdb->prefix}actionnetwork";
+		$sql = "SELECT * FROM {$wpdb->prefix}actionnetwork_actions";
 
 		$sql .= self::filter_sql();
 
@@ -226,7 +226,7 @@ EOHTML;
 
 	function record_count() {
 		global $wpdb;
-		$sql = "SELECT COUNT(*) FROM {$wpdb->prefix}actionnetwork";
+		$sql = "SELECT COUNT(*) FROM {$wpdb->prefix}actionnetwork_actions";
 		$sql .= self::filter_sql();
 		return $wpdb->get_var( $sql );
 	}
@@ -234,7 +234,7 @@ EOHTML;
 	function delete_action( $wp_id ) {
 		global $wpdb;
 		$wpdb->delete(
-			"{$wpdb->prefix}actionnetwork",
+			"{$wpdb->prefix}actionnetwork_actions",
 			array( 'wp_id' => $wp_id ),
 			array( '%d' )
 		);
@@ -243,7 +243,7 @@ EOHTML;
 	function hide_action( $wp_id ) {
 		global $wpdb;
 		$wpdb->update(
-			"{$wpdb->prefix}actionnetwork",
+			"{$wpdb->prefix}actionnetwork_actions",
 			array( 'hidden' => 1 ),
 			array( 'wp_id' => $wp_id ),
 			array( '%d' ),
@@ -254,7 +254,7 @@ EOHTML;
 	function unhide_action( $wp_id ) {
 		global $wpdb;
 		$wpdb->update(
-			"{$wpdb->prefix}actionnetwork",
+			"{$wpdb->prefix}actionnetwork_actions",
 			array( 'hidden' => 0 ),
 			array( 'wp_id' => $wp_id ),
 			array( '%d' ),
@@ -283,7 +283,7 @@ EOHTML;
 			$deleted_actions = 0;
 			$cannot_delete_synced_actions = 0;
 			foreach ( $delete_wp_ids as $wp_id ) {
-				if ($wpdb->get_var("SELECT COUNT(*) FROM `{$wpdb->prefix}actionnetwork` WHERE an_id='' AND wp_id=$wp_id")) {
+				if ($wpdb->get_var("SELECT COUNT(*) FROM `{$wpdb->prefix}actionnetwork_actions` WHERE an_id='' AND wp_id=$wp_id")) {
 					self::delete_action( $wp_id );
 					$deleted_actions++;
 				} else {
@@ -317,7 +317,7 @@ EOHTML;
 			$cannot_unhide_synced_disabled_actions = 0;
 			$unhidden_actions = 0;
 			foreach ( $unhide_wp_ids as $wp_id ) {
-				if ($wpdb->get_var("SELECT COUNT(*) FROM `{$wpdb->prefix}actionnetwork` WHERE an_id != '' AND enabled=0 AND wp_id=$wp_id")) {
+				if ($wpdb->get_var("SELECT COUNT(*) FROM `{$wpdb->prefix}actionnetwork_actions` WHERE an_id != '' AND enabled=0 AND wp_id=$wp_id")) {
 					$cannot_unhide_synced_disabled_actions++;
 				} else {
 					self::unhide_action( $wp_id );
@@ -347,7 +347,7 @@ EOHTML;
 			$type_options = '';
 			$type = isset($_REQUEST['type']) ? $_REQUEST['type'] : '';
 			foreach ($this->action_type_plurals as $key => $plural) {
-				$sql = "SELECT COUNT(*) FROM {$wpdb->prefix}actionnetwork WHERE type='$key'";
+				$sql = "SELECT COUNT(*) FROM {$wpdb->prefix}actionnetwork_actions WHERE type='$key'";
 				$count = $wpdb->get_var( $sql );
 				$type_options .= "<option value=\"$key\"";
 				$type_options .= selected( $type, $key, false );

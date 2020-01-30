@@ -25,11 +25,6 @@ if (!class_exists('ActionNetwork_Sync')) {
 }
 
 /**
- * Set up options
- */
-add_option( 'actionnetwork_api_key', null );
-
-/**
  * Installation, database setup
  */
 global $actionnetwork_version;
@@ -110,7 +105,7 @@ function actionnetwork_install() {
 			$notices[] = __('Database updated to add table actionnetwork_queue', 'actionnetwork');
 		}
 
-		$table_name = $wpdb->prefix . 'actionnetwork';
+		$table_name = $wpdb->prefix . 'actionnetwork_actions';
 		$charset_collate = $wpdb->get_charset_collate();
 
 		//Adding additional column, g_id, for group api keys.
@@ -151,16 +146,17 @@ function actionnetwork_install() {
 
 		$table_name_groups = $wpdb->prefix . 'actionnetwork_groups';
 		$sql_groups = "CREATE TABLE $table_name_groups (
-			id bigint(2) NOT NULL AUTO_INCREMENT,
-			api_key varchar(64) NOT NULL ''
-			PRIMARY KEY  (id)
+			group_id mediumint(9) NOT NULL AUTO_INCREMENT,
+			api_key varchar(64) DEFAULT '' NOT NULL,
+			name varchar(255) DEFAULT '' NOT NULL,
+			PRIMARY KEY  (group_id)
 		) $charset_collate;";
 
 		require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
 		
 		dbDelta( $sql );
 		dbDelta( $sql_queue );
-		dbDelta( $sql_groups);
+		dbDelta( $sql_groups );
 
 		update_option( 'actionnetwork_db_version', $actionnetwork_db_version );
 
@@ -198,7 +194,6 @@ function actionnetwork_uninstall() {
 		'actionnetwork_version',
 		'actionnetwork_db_version',
 		'actionnetwork_deferred_admin_notices',
-		'actionnetwork_api_key',
 		'actionnetwork_cache_timestamp',
 		'actionnetwork_queue_status',
 		'actionnetwork_cron_token',
@@ -208,10 +203,13 @@ function actionnetwork_uninstall() {
 	}
 
 	// remove database tables
-	$table_name = $wpdb->prefix . 'actionnetwork';
+	$table_name = $wpdb->prefix . 'actionnetwork_actions';
 	$wpdb->query("DROP TABLE IF EXISTS $table_name");
 	
 	$table_name = $wpdb->prefix . 'actionnetwork_queue';
+	$wpdb->query("DROP TABLE IF EXISTS $table_name");
+
+	$table_name = $wpdb->prefix . 'actionnetwork_groups';
 	$wpdb->query("DROP TABLE IF EXISTS $table_name");
 
 }
@@ -278,7 +276,7 @@ function actionnetwork_shortcode( $atts ) {
 	if (!in_array($size, array('standard', 'full'))) { $size = 'standard'; }
 	if (!in_array($style, array('default', 'layout_only', 'no'))) { $style = 'layout_only'; }
 	
-	$sql = "SELECT * FROM {$wpdb->prefix}actionnetwork WHERE wp_id=".$id;
+	$sql = "SELECT * FROM {$wpdb->prefix}actionnetwork_actions WHERE wp_id=".$id;
 	$action = $wpdb->get_row( $sql, ARRAY_A );
 
 	$embed_style = 'embed_'.$size.'_'.$style.'_styles';
@@ -362,7 +360,7 @@ EOHTML;
 	// load events
 	$action_types = preg_replace('/[^a-z_,]/','',$action_types);
 	$action_types = "'".str_replace(',',"','",$action_types)."'";
-	$sql = "SELECT * FROM {$wpdb->prefix}actionnetwork WHERE type IN ($action_types)";
+	$sql = "SELECT * FROM {$wpdb->prefix}actionnetwork_actions WHERE type IN ($action_types)";
 	$sql .= " AND enabled=1 AND hidden=0";
 	$sql .= " ORDER BY created_date DESC";
 	if ($n) { $sql .= " LIMIT 0,$n"; }
@@ -389,6 +387,7 @@ EOHTML;
 	if (count($actions)) {
 		foreach ($actions as $action) {
 			$action_data['id'] = isset($action['wp_id']) ? $action['wp_id'] : 0;
+			$action_data['g_id'] = isset($action['g_id']) ? $action['g_id'] : 0;
 			$action_data['title'] = isset($action['title']) ? $action['title'] : '(Action Title)';
 			$action_data['link'] = isset($action['browser_url']) ? $action['browser_url'] : site_url();
 			$action_data['link'] = $link_format ? _actionnetwork_twig_render( $link_format, $action_data, 'action') : $action_data['link'];
@@ -447,7 +446,7 @@ function actionnetwork_calendar_shortcode ( $atts, $content = null ) {
 	// check if we have an id that matches an existing event
 	$event_id = ( isset($wp->query_vars['page']) && (!isset($atts['ignore_url_id']) || !$atts['ignore_url_id']) ) ? (int) $wp->query_vars['page'] : 0;
 	if ($event_id) {
-		$sql = "SELECT * FROM {$wpdb->prefix}actionnetwork WHERE type IN ('event','ticketed_event') AND wp_id=$event_id";
+		$sql = "SELECT * FROM {$wpdb->prefix}actionnetwork_actions WHERE type IN ('event','ticketed_event') AND wp_id=$event_id";
 		$sql .= " AND enabled=1 AND hidden=0";
 		$sql .= " AND start_date > ".(int) current_time('timestamp');
 		$event = $wpdb->get_row( $sql, ARRAY_A );
@@ -481,7 +480,7 @@ EOHTML;
 	list ($no_events,$post) = explode('{% endfor %}', $content);
 	
 	// load events
-	$sql = "SELECT * FROM {$wpdb->prefix}actionnetwork WHERE type IN ('event','ticketed_event')";
+	$sql = "SELECT * FROM {$wpdb->prefix}actionnetwork_actions WHERE type IN ('event','ticketed_event')";
 	$sql .= " AND enabled=1 AND hidden=0";
 	$sql .= " AND start_date > ".(int) current_time('timestamp');
 	$sql .= " ORDER BY start_date ASC";
@@ -494,6 +493,7 @@ EOHTML;
 			$event['date'] = isset($event['start_date']) ? date($date_format, $event['start_date']) : '(No Date)';
 			$event['link']= isset($event['browser_url']) ? $event['browser_url'] : site_url();
 			$event['id'] = isset($event['wp_id']) ? $event['wp_id'] : 0;
+			$event['g_id'] = isset($event['g_id']) ? $event['g_id'] : 0;
 			$location_json = isset($event['location']) ? unserialize( $event['location'] ) : new stdClass();
 			$event['location'] = isset($event['location'])? _actionnetwork_render_location( $event['location'] ) : '';
 			$event['link'] = $link_format ? _actionnetwork_twig_render( $link_format, $event, 'event') : $event['link'];
@@ -513,6 +513,7 @@ EOHTML;
 	if (count($events)) {
 		foreach ($events as $event) {
 			$event_data['id'] = isset($event['wp_id']) ? $event['wp_id'] : 0;
+			$event_data['g_id'] = isset($event['g_id']) ? $event['g_id'] : 0;
 			$event_data['title'] = isset($event['title']) ? $event['title'] : '(Event Title)';
 			$event_data['date'] = isset($event['start_date']) ? date($date_format, $event['start_date']) : '(Date)';
 			$event_data['link'] = isset($event['browser_url']) ? $event['browser_url'] : site_url();
@@ -719,6 +720,8 @@ function _actionnetwork_admin_handle_actions(){
 
 	global $wpdb;
 	$return = array();
+	$sql = "SELECT * FROM {$wpdb->prefix}actionnetwork_groups;";
+	$groups = $wpdb->get_results( $sql, ARRAY_A );
 	
 	if ( !isset($_REQUEST['actionnetwork_admin_action']) || !check_admin_referer(
 		'actionnetwork_'.$_REQUEST['actionnetwork_admin_action'], 'actionnetwork_nonce_field'
@@ -730,96 +733,96 @@ function _actionnetwork_admin_handle_actions(){
 	
 		case 'update_api_key':
 
-		//Adding for loop to iterate through child groups as well
+			foreach ( $groups as $group) {
 
-			$debug = "update_api_key case matched\n";
-			
-			$actionnetwork_api_key = sanitize_key($_REQUEST[$api_key_name]);
-			$debug .= "$api_key_name: $actionnetwork_api_key\n";
-			
-			$queue_status = get_option( 'actionnetwork_queue_status', 'empty' );
-			$debug .= "queue_status: $queue_status\n";
-			
-			if (get_option($api_key_name, null) !== $actionnetwork_api_key) {
+				$debug = "update_api_key case matched\n";
 				
-				$debug .= "get_option did not match actionnetwork_api_key\n";
+				$actionnetwork_api_key = sanitize_key($group->api_key);
+				$debug .= "$api_key_name: $actionnetwork_api_key\n";
 				
-				// don't allow API Key to be changed if a sync queue is processing
-				if ($queue_status != 'empty') {
-					$return['notices']['error'] = __( 'Cannot change API key while a sync queue is processing', 'actionnetwork' );
-				} else {
+				$queue_status = get_option( 'actionnetwork_queue_status', 'empty' );
+				$debug .= "queue_status: $queue_status\n";
+				
+				if (get_option($api_key_name, null) !== $actionnetwork_api_key) {
 					
-					$debug .= "trying to change api key\n";
+					$debug .= "get_option did not match actionnetwork_api_key\n";
 					
-					$actionnetwork_api_key_is_valid = false;
-					
-					// empty API key is "valid"
-					if (!$actionnetwork_api_key) {
-						$actionnetwork_api_key_is_valid = true;
+					// don't allow API Key to be changed if a sync queue is processing
+					if ($queue_status != 'empty') {
+						$return['notices']['error'] = __( 'Cannot change API key while a sync queue is processing', 'actionnetwork' );
 					} else {
-					
-						// validate API key
-						$ActionNetwork = new ActionNetwork($actionnetwork_api_key);
-						$validate = $ActionNetwork->call('petitions');
-					
-						$debug .= "validation returned:\n\n" . print_r($validate,1) . "\n\n";
 						
-						if (isset($validate->error)) {
-							if (substr($validate->error,0,30) == 'API Key invalid or not present') {
-								$return['notices']['error'][] = __( 'Invalid API key:', 'actionnetwork' ).' '.$actionnetwork_api_key;
-							} else {
-								$return['notices']['error'][] = __( 'Error validating API key:', 'actionnetwork' ).' '.$actionnetwork_api_key;
-							}
-						} else {
+						$debug .= "trying to change api key\n";
+						
+						$actionnetwork_api_key_is_valid = false;
+						
+						// empty API key is "valid"
+						if (!$actionnetwork_api_key) {
 							$actionnetwork_api_key_is_valid = true;
+						} else {
+						
+							// validate API key
+							$ActionNetwork = new ActionNetwork($actionnetwork_api_key);
+							$validate = $ActionNetwork->call('petitions');
+						
+							$debug .= "validation returned:\n\n" . print_r($validate,1) . "\n\n";
+							
+							if (isset($validate->error)) {
+								if (substr($validate->error,0,30) == 'API Key invalid or not present') {
+									$return['notices']['error'][] = __( 'Invalid API key:', 'actionnetwork' ).' '.$actionnetwork_api_key;
+								} else {
+									$return['notices']['error'][] = __( 'Error validating API key:', 'actionnetwork' ).' '.$actionnetwork_api_key;
+								}
+							} else {
+								$actionnetwork_api_key_is_valid = true;
+							}
+							
 						}
 						
-					}
+						$debug .= $actionnetwork_api_key_is_valid ? "actionnetwork_api_key is valid\n" : "actionnetwork_api_key is not valid\n";
+						
+						if ($actionnetwork_api_key_is_valid) {
 					
-					$debug .= $actionnetwork_api_key_is_valid ? "actionnetwork_api_key is valid\n" : "actionnetwork_api_key is not valid\n";
-					
-					if ($actionnetwork_api_key_is_valid) {
-				
-						update_option($api_key_name, $actionnetwork_api_key);
-						update_option('actionnetwork_cache_timestamp', 0);
-						$deleted = $wpdb->query("DELETE FROM {$wpdb->prefix}actionnetwork WHERE an_id != ''");
-	
-						if ($actionnetwork_api_key) {
-							
-							// initiate a background process by making a call to the "ajax" URL
-							$ajax_url = admin_url( 'admin-ajax.php' );
-	
-							// since we're making this call from the server, we can't use a nonce
-							// because the user id would be different. so create a token
-							$timeint = time() / mt_rand( 1, 10 ) * mt_rand( 1, 10 );
-							$timestr = (string) $timeint;
-							$token = md5( $timestr );
-							update_option( 'actionnetwork_ajax_token', $token );
-	
-							$body = array(
-								'action' => 'actionnetwork_process_queue',
-								'queue_action' => 'init',
-								'token' => $token,
-							);
-							$args = array( 'body' => $body, 'timeout' => 1 );
-							wp_remote_post( $ajax_url, $args );
-	
-							$queue_status = 'processing';
-							$return['queue_status'] = $queue_status;
-							
-							$return['notices']['updated']['sync-started'] = $deleted ? __('API key has been updated, actions synced via previous API key have been removed, and sync with new API key has been started', 'actionnetwork') : __('API key has been updated and sync with new API key has been started', 'actionnetwork');
-							
-						} else {
-							
-							$return['notices']['updated'][] = $deleted ? __('API key and actions synced via API have been removed', 'actionnetwork') : __('API key has been removed', 'actionnetwork');
-							
+							update_option('actionnetwork_cache_timestamp', 0);
+							$deleted = $wpdb->query("DELETE FROM {$wpdb->prefix}actionnetwork_actions WHERE an_id != ''");
+		
+							if ($actionnetwork_api_key) {
+								
+								// initiate a background process by making a call to the "ajax" URL
+								$ajax_url = admin_url( 'admin-ajax.php' );
+		
+								// since we're making this call from the server, we can't use a nonce
+								// because the user id would be different. so create a token
+								$timeint = time() / mt_rand( 1, 10 ) * mt_rand( 1, 10 );
+								$timestr = (string) $timeint;
+								$token = md5( $timestr );
+								update_option( 'actionnetwork_ajax_token', $token );
+		
+								$body = array(
+									'action' => 'actionnetwork_process_queue',
+									'queue_action' => 'init',
+									'token' => $token,
+								);
+								$args = array( 'body' => $body, 'timeout' => 1 );
+								wp_remote_post( $ajax_url, $args );
+		
+								$queue_status = 'processing';
+								$return['queue_status'] = $queue_status;
+								
+								$return['notices']['updated']['sync-started'] = $deleted ? __('API key has been updated, actions synced via previous API key have been 	removed, and sync with new API key has been started', 'actionnetwork') : __('API key has been updated and sync with new API key has 	been started', 'actionnetwork');
+								
+							} else {
+								
+								$return['notices']['updated'][] = $deleted ? __('API key and actions synced via API have been removed', 'actionnetwork') : __('API key 	has been removed', 'actionnetwork');
+								
+							}
+						
 						}
 					
 					}
-				
 				}
 			}
-		break;
+			break;
 
 		case 'update_sync':
 
@@ -855,314 +858,314 @@ function _actionnetwork_admin_handle_actions(){
 			
 			$return['queue_status'] = $queue_status;
 			
-		break;
+			break;
 		
 		case 'edit_event':
-		$embed_wp_id = isset($_REQUEST['actionnetwork_event_wp_id']) ? (int) $_REQUEST['actionnetwork_event_wp_id'] : 0;
-		if ($embed_wp_id) {
+			$embed_wp_id = isset($_REQUEST['actionnetwork_event_wp_id']) ? (int) $_REQUEST['actionnetwork_event_wp_id'] : 0;
+			if ($embed_wp_id) {
 			
-			$table_name = $wpdb->prefix . 'actionnetwork';
-			
-			$sql = "SELECT * FROM $table_name WHERE wp_id=".$embed_wp_id;
-			$event = $wpdb->get_row( $sql, ARRAY_A );
-			
-			// only edit if wp_id refers to an existing event or tickted_event which is not API-synced
-			if ( ($event == null) || $event['an_id'] ||
-					(!in_array($event['type'],array('event','ticketed_event')))) {
-				break;
-			}
-			
-			// if we're posting, then get the title, date & code from $_POST
-			$update = false;
-			if (isset($_POST['postback']) && $_POST['postback']) {
+				$table_name = $wpdb->prefix . 'actionnetwork_actions';
 				
-				$update = true;
+				$sql = "SELECT * FROM $table_name WHERE wp_id=".$embed_wp_id;
+				$event = $wpdb->get_row( $sql, ARRAY_A );
 				
-				$embed_title = isset($_REQUEST['actionnetwork_add_embed_title']) ? stripslashes($_REQUEST['actionnetwork_add_embed_title']) : '';
-				$embed_date_string = isset($_REQUEST['actionnetwork_add_embed_date']) ? stripslashes($_REQUEST['actionnetwork_add_embed_date']) : '';
-				$embed_date_time_hour = isset($_REQUEST['actionnetwork_add_embed_date_time_hour']) ? intval($_REQUEST['actionnetwork_add_embed_date_time_hour']) : 12;
-				$embed_date_time_minutes = isset($_REQUEST['actionnetwork_add_embed_date_time_minutes']) ? intval($_REQUEST['actionnetwork_add_embed_date_time_minutes']) : 0;
-				if ($embed_date_time_minutes < 10) { $embed_date_time_minutes = '0' . $embed_date_time_minutes; }
-				$embed_date_time_ampm = isset($_REQUEST['actionnetwork_add_embed_date_time_ampm']) ? _actionnetwork_validate_ampm($_REQUEST['actionnetwork_add_embed_date_time_ampm']) : 'am';
-				$embed_code = isset($_REQUEST['actionnetwork_add_embed_code']) ? stripslashes($_REQUEST['actionnetwork_add_embed_code']) : '';
-				$location = isset($_REQUEST['actionnetwork_add_location']) ? stripslashes($_REQUEST['actionnetwork_add_location']) : '';
-				
-				// make sure title & embed_code are not empty, add error messages;
-				if (!$embed_title) {
-					$return['notices']['error'][] = __('You must give your action a title', 'actionnetwork');
-					$return['errors']['#actionnetwork_add_embed_title'] = true;
-					$update = false;
-				}
-				if (!$embed_code) {
-					$return['notices']['error'][] = __('You must enter an embed code or description', 'actionnetwork');
-					$return['errors']['#actionnetwork_add_embed_code'] = true;
-					$update = false;
+				// only edit if wp_id refers to an existing event or tickted_event which is not API-synced
+				if ( ($event == null) || $event['an_id'] ||
+						(!in_array($event['type'],array('event','ticketed_event')))) {
+					break;
 				}
 				
-			} else {
+				// if we're posting, then get the title, date & code from $_POST
+				$update = false;
+				if (isset($_POST['postback']) && $_POST['postback']) {
+					
+					$update = true;
+					
+					$embed_title = isset($_REQUEST['actionnetwork_add_embed_title']) ? stripslashes($_REQUEST['actionnetwork_add_embed_title']) : '';
+					$embed_date_string = isset($_REQUEST['actionnetwork_add_embed_date']) ? stripslashes($_REQUEST['actionnetwork_add_embed_date']) : '';
+					$embed_date_time_hour = isset($_REQUEST['actionnetwork_add_embed_date_time_hour']) ? intval($_REQUEST['actionnetwork_add_embed_date_time_hour']) : 12;
+					$embed_date_time_minutes = isset($_REQUEST['actionnetwork_add_embed_date_time_minutes']) ? intval($_REQUEST['actionnetwork_add_embed_date_time_minutes']) : 0;
+					if ($embed_date_time_minutes < 10) { $embed_date_time_minutes = '0' . $embed_date_time_minutes; }
+					$embed_date_time_ampm = isset($_REQUEST['actionnetwork_add_embed_date_time_ampm']) ? _actionnetwork_validate_ampm($_REQUEST['actionnetwork_add_embed_date_time_ampm']) : 'am';
+					$embed_code = isset($_REQUEST['actionnetwork_add_embed_code']) ? stripslashes($_REQUEST['actionnetwork_add_embed_code']) : '';
+					$location = isset($_REQUEST['actionnetwork_add_location']) ? stripslashes($_REQUEST['actionnetwork_add_location']) : '';
+					
+					// make sure title & embed_code are not empty, add error messages;
+					if (!$embed_title) {
+						$return['notices']['error'][] = __('You must give your action a title', 'actionnetwork');
+						$return['errors']['#actionnetwork_add_embed_title'] = true;
+						$update = false;
+					}
+					if (!$embed_code) {
+						$return['notices']['error'][] = __('You must enter an embed code or description', 'actionnetwork');
+						$return['errors']['#actionnetwork_add_embed_code'] = true;
+						$update = false;
+					}
+					
+				} else {
+					
+					$embed_title = esc_attr($event['title']);
+					$embed_date_string = date('Y-m-d', $event['start_date']);
+					$embed_date_time_hour = date('h', $event['start_date']);
+					$embed_date_time_minutes = date('i', $event['start_date']);
+					$embed_date_time_ampm = date('a', $event['start_date']);
+					$embed_code = _actionnetwork_get_embed_code( $event, '', false );
+					$location_object = unserialize( $event['location'] );
+					$location = isset( $location_object->html ) ? $location_object->html : '';
+					
+				}
 				
-				$embed_title = esc_attr($event['title']);
-				$embed_date_string = date('Y-m-d', $event['start_date']);
-				$embed_date_time_hour = date('h', $event['start_date']);
-				$embed_date_time_minutes = date('i', $event['start_date']);
-				$embed_date_time_ampm = date('a', $event['start_date']);
-				$embed_code = _actionnetwork_get_embed_code( $event, '', false );
-				$location_object = unserialize( $event['location'] );
-				$location = isset( $location_object->html ) ? $location_object->html : '';
+				if ($update) {	
+					
+					$event['title'] = $embed_title;
+					$embed_date_string .= ' '.$embed_date_time_hour.':'.$embed_date_time_minutes.' '.$embed_date_time_ampm;
+					$event['start_date'] = strtotime($embed_date_string);
+					$event['modified_date'] = (int) current_time('timestamp');
+					
+					// parse embed code
+					$embed_style_matched = preg_match_all("/<link href='https:\/\/actionnetwork\.org\/css\/style-embed(-whitelabel)?\.css' rel='stylesheet' type='text\/css' \/>/", $embed_code, $embed_style_matches, PREG_SET_ORDER);
+					$embed_script_matched = preg_match_all("|<script src='https://actionnetwork\.org/widgets/v[2-3]/([a-z_]+)/([-a-z0-9]+)\?format=js&source=widget(&style=full)?'>|", $embed_code, $embed_script_matches, PREG_SET_ORDER);
+					$embed_style = $embed_style_matched ? ( isset($embed_style_matches[0][1]) && $embed_style_matches[0][1] ? 'layout_only' : 'default' ) : 'no';
+					$embed_size = isset($embed_script_matches[0][3]) && $embed_script_matches[0][3] ? 'full' : 'standard';
+					$embed_field_name = 'embed_'.$embed_size.'_'.$embed_style.'_styles';
+					
+					// clear out all possible embed codes, in case it has changed
+					$event['embed_standard_layout_only_styles'] = '';
+					$event['embed_full_layout_only_styles'] = '';
+					$event['embed_standard_no_styles'] = '';
+					$event['embed_full_no_styles'] = '';
+					$event['embed_standard_default_styles'] = '';
+					$event['embed_full_default_styles'] = '';
+					$event[$embed_field_name] = $embed_code;
+					
+					// serialize location
+					$location_object = new stdClass();
+					$location_object->html = $location;
+					$event['location'] = serialize($location_object);
+					
+					$wpdb->update($table_name, $event, array( 'wp_id' => $embed_wp_id ) );
+					$return['notices']['updated'][] = sprintf(
+						/* translators: %s is title of event */
+						__('%s has been updated', 'actionnetwork'), $embed_title
+					);
+					// $return['notices']['error'][] = '$embed_date_string: '.$embed_date_string.'<br /><br />$_REQUEST:<br /><br /><pre>'.print_r($_REQUEST,1).'</pre>';
+					
+				// otherwise, build an edit form	
+				} else {
+					
+					$admin_url = admin_url('admin.php?page=actionnetwork');
+					
+					$text_actions = __('Actions', 'actionnetwork');
+					$text_edit_event = __('Edit Event', 'actionnetwork');
+					$text_settings = __('Settings', 'actionnetwork');
+					
+					$form_action = admin_url('admin.php?page=actionnetwork');
+					$nonce_field = wp_nonce_field( 'actionnetwork_edit_event', 'actionnetwork_nonce_field', true, false );
+					$text_title = __('Title', 'actionnetwork');
+					$text_required = __('This field is required', 'actionnetwork');
+					$error_title_required = isset($return['errors']['#actionnetwork_add_embed_title']) && $return['errors']['#actionnetwork_add_embed_title'] ? ' error' : '';
+					$text_date = __('Date (if event)', 'actionnetwork');
+					$input_time = _actionnetwork_build_time_input( $embed_date_time_hour, $embed_date_time_minutes, $embed_date_time_ampm );
+					
+					$text_embed_code = __('Embed Code/Event Description', 'actionnetwork');
+					$error_embed_code_required = isset($return['errors']['#actionnetwork_add_embed_code']) && $return['errors']['#actionnetwork_add_embed_code'] ? ' error' : '';
+					
+					$text_location = __('Event location', 'actionnetwork');
+					$text_location_description = __('If you are entering a description above (instead of an embed code), make sure the title, date and location (if relevant) are included in the description as well.');
+					
+					$text_update_event = __('Update event', 'actionnetwork');
+					
+					$return['edit_event_form'] = <<<EOHTML
+					
+					
+				<h2 class="nav-tab-wrapper">
+					<a href="$admin_url#actionnetwork-actions" class="nav-tab">
+						$text_actions
+					</a>
+					<span class="nav-tab nav-tab-active">
+						$text_edit_event
+					</span>
+					<a href="$admin_url#actionnetwork-settings" class="nav-tab">
+						$text_settings
+					</a>
+				</h2>
 				
-			}
-			
-			if ($update) {	
-				
-				$event['title'] = $embed_title;
-				$embed_date_string .= ' '.$embed_date_time_hour.':'.$embed_date_time_minutes.' '.$embed_date_time_ampm;
-				$event['start_date'] = strtotime($embed_date_string);
-				$event['modified_date'] = (int) current_time('timestamp');
-				
-				// parse embed code
-				$embed_style_matched = preg_match_all("/<link href='https:\/\/actionnetwork\.org\/css\/style-embed(-whitelabel)?\.css' rel='stylesheet' type='text\/css' \/>/", $embed_code, $embed_style_matches, PREG_SET_ORDER);
-				$embed_script_matched = preg_match_all("|<script src='https://actionnetwork\.org/widgets/v[2-3]/([a-z_]+)/([-a-z0-9]+)\?format=js&source=widget(&style=full)?'>|", $embed_code, $embed_script_matches, PREG_SET_ORDER);
-				$embed_style = $embed_style_matched ? ( isset($embed_style_matches[0][1]) && $embed_style_matches[0][1] ? 'layout_only' : 'default' ) : 'no';
-				$embed_size = isset($embed_script_matches[0][3]) && $embed_script_matches[0][3] ? 'full' : 'standard';
-				$embed_field_name = 'embed_'.$embed_size.'_'.$embed_style.'_styles';
-				
-				// clear out all possible embed codes, in case it has changed
-				$event['embed_standard_layout_only_styles'] = '';
-				$event['embed_full_layout_only_styles'] = '';
-				$event['embed_standard_no_styles'] = '';
-				$event['embed_full_no_styles'] = '';
-				$event['embed_standard_default_styles'] = '';
-				$event['embed_full_default_styles'] = '';
-				$event[$embed_field_name] = $embed_code;
-				
-				// serialize location
-				$location_object = new stdClass();
-				$location_object->html = $location;
-				$event['location'] = serialize($location_object);
-				
-				$wpdb->update($table_name, $event, array( 'wp_id' => $embed_wp_id ) );
-				$return['notices']['updated'][] = sprintf(
-					/* translators: %s is title of event */
-					__('%s has been updated', 'actionnetwork'), $embed_title
-				);
-				// $return['notices']['error'][] = '$embed_date_string: '.$embed_date_string.'<br /><br />$_REQUEST:<br /><br /><pre>'.print_r($_REQUEST,1).'</pre>';
-				
-			// otherwise, build an edit form	
-			} else {
-				
-				$admin_url = admin_url('admin.php?page=actionnetwork');
-				
-				$text_actions = __('Actions', 'actionnetwork');
-				$text_edit_event = __('Edit Event', 'actionnetwork');
-				$text_settings = __('Settings', 'actionnetwork');
-				
-				$form_action = admin_url('admin.php?page=actionnetwork');
-				$nonce_field = wp_nonce_field( 'actionnetwork_edit_event', 'actionnetwork_nonce_field', true, false );
-				$text_title = __('Title', 'actionnetwork');
-				$text_required = __('This field is required', 'actionnetwork');
-				$error_title_required = isset($return['errors']['#actionnetwork_add_embed_title']) && $return['errors']['#actionnetwork_add_embed_title'] ? ' error' : '';
-				$text_date = __('Date (if event)', 'actionnetwork');
-				$input_time = _actionnetwork_build_time_input( $embed_date_time_hour, $embed_date_time_minutes, $embed_date_time_ampm );
-				
-				$text_embed_code = __('Embed Code/Event Description', 'actionnetwork');
-				$error_embed_code_required = isset($return['errors']['#actionnetwork_add_embed_code']) && $return['errors']['#actionnetwork_add_embed_code'] ? ' error' : '';
-				
-				$text_location = __('Event location', 'actionnetwork');
-				$text_location_description = __('If you are entering a description above (instead of an embed code), make sure the title, date and location (if relevant) are included in the description as well.');
-				
-				$text_update_event = __('Update event', 'actionnetwork');
-				
-				$return['edit_event_form'] = <<<EOHTML
-				
-				
-			<h2 class="nav-tab-wrapper">
-				<a href="$admin_url#actionnetwork-actions" class="nav-tab">
-					$text_actions
-				</a>
-				<span class="nav-tab nav-tab-active">
-					$text_edit_event
-				</span>
-				<a href="$admin_url#actionnetwork-settings" class="nav-tab">
-					$text_settings
-				</a>
-			</h2>
-			
-				<h2>$text_edit_event</h2>
-				<form method="post" action="$form_action">
-
-					$nonce_field
-
-					<input type="hidden" name="actionnetwork_admin_action" value="edit_event" />
-					<input type="hidden" name="actionnetwork_event_wp_id" value="$embed_wp_id" />
-					<input type="hidden" name="postback" value="1" />
- 					<table class="form-table"><tbody>
-						<tr valign="top">
-							<th scope="row"><label for="actionnetwork_add_embed_title">$text_title <span class="required" title="$text_required">*</span></label></th>
-							<td>
-								<input id="actionnetwork_add_embed_title" name="actionnetwork_add_embed_title" class="required$error_title_required" type="text" value="$embed_title" />
-							</td>
-						</tr>
-						<tr valign="top">
-							<th scope="row"><label for="actionnetwork_add_embed_date">$text_date</label></th>
-							<td>
-								<input id="actionnetwork_add_embed_date" name="actionnetwork_add_embed_date" type="date" value="$embed_date_string" /> $input_time
-							</td>
-						</tr>
-						<tr valign="top">
-							<th scope="row"><label for="actionnetwork_add_embed_code">$text_embed_code <span class="required" title="$text_required">*</span></label></th>
-							<td>
-								<textarea id="actionnetwork_add_embed_code" name="actionnetwork_add_embed_code" class="required$error_embed_code_required">$embed_code</textarea>
-							</td>
-						</tr>
-						<tr valign="top">
-							<th scope="row"><label for="actionnetwork_add_location">$text_location</label></th>
-							<td>
-								<textarea id="actionnetwork_add_location" name="actionnetwork_add_location">$location</textarea>
-								<p>$text_location_description</p>
-							</td>
-						</tr>
-					</tbody></table>
-					<p class="submit"><input type="submit" id="actionnetwork-add-embed-form-submit" class="button-primary" value="$text_update_event" /></p>
-				</form>
+					<h2>$text_edit_event</h2>
+					<form method="post" action="$form_action">
+	
+						$nonce_field
+	
+						<input type="hidden" name="actionnetwork_admin_action" value="edit_event" />
+						<input type="hidden" name="actionnetwork_event_wp_id" value="$embed_wp_id" />
+						<input type="hidden" name="postback" value="1" />
+ 						<table class="form-table"><tbody>
+							<tr valign="top">
+								<th scope="row"><label for="actionnetwork_add_embed_title">$text_title <span class="required" title="$text_required">*</span></label></th>
+								<td>
+									<input id="actionnetwork_add_embed_title" name="actionnetwork_add_embed_title" class="required$error_title_required" type="text" value="$embed_title" />
+								</td>
+							</tr>
+							<tr valign="top">
+								<th scope="row"><label for="actionnetwork_add_embed_date">$text_date</label></th>
+								<td>
+									<input id="actionnetwork_add_embed_date" name="actionnetwork_add_embed_date" type="date" value="$embed_date_string" /> $input_time
+								</td>
+							</tr>
+							<tr valign="top">
+								<th scope="row"><label for="actionnetwork_add_embed_code">$text_embed_code <span class="required" title="$text_required">*</span></label></th>
+								<td>
+									<textarea id="actionnetwork_add_embed_code" name="actionnetwork_add_embed_code" class="required$error_embed_code_required">$embed_code</textarea>
+								</td>
+							</tr>
+							<tr valign="top">
+								<th scope="row"><label for="actionnetwork_add_location">$text_location</label></th>
+								<td>
+									<textarea id="actionnetwork_add_location" name="actionnetwork_add_location">$location</textarea>
+									<p>$text_location_description</p>
+								</td>
+							</tr>
+						</tbody></table>
+						<p class="submit"><input type="submit" id="actionnetwork-add-embed-form-submit" class="button-primary" value="$text_update_event" /></p>
+					</form>
 EOHTML;
 			
-			}
+				}
 			
 			// update
 			
-		}
-		break;
+			}
+			break;
 		
 		case 'add_embed':
-		$embed_title = isset($_REQUEST['actionnetwork_add_embed_title']) ? stripslashes($_REQUEST['actionnetwork_add_embed_title']) : '';
-		$embed_date_string = isset($_REQUEST['actionnetwork_add_embed_date']) ? stripslashes($_REQUEST['actionnetwork_add_embed_date']) : '';
-		$embed_date_time_hour = isset($_REQUEST['actionnetwork_add_embed_date_time_hour']) ? intval($_REQUEST['actionnetwork_add_embed_date_time_hour']) : 12;
-		$embed_date_time_minutes = isset($_REQUEST['actionnetwork_add_embed_date_time_minutes']) ? intval($_REQUEST['actionnetwork_add_embed_date_time_minutes']) : 0;
-		if ($embed_date_time_minutes < 10) { $embed_date_time_minutes = '0' . $embed_date_time_minutes; }
-		$embed_date_time_ampm = isset($_REQUEST['actionnetwork_add_embed_date_time_ampm']) ? _actionnetwork_validate_ampm($_REQUEST['actionnetwork_add_embed_date_time_ampm']) : 'am';
-		$embed_code = isset($_REQUEST['actionnetwork_add_embed_code']) ? stripslashes($_REQUEST['actionnetwork_add_embed_code']) : '';
-		$location = isset($_REQUEST['actionnetwork_add_location']) ? stripslashes($_REQUEST['actionnetwork_add_location']) : '';
-		$embed_wp_id = isset($_REQUEST['actionnetwork_embed_wp_id']) ? (int) $_REQUEST['actionnetwork_embed_wp_id'] : 0;
-		
-		$embed_valid = true;
-
-		// parse embed code
-		$embed_style_matched = preg_match_all("/<link href='https:\/\/actionnetwork\.org\/css\/style-embed(-whitelabel)?\.css' rel='stylesheet' type='text\/css' \/>/", $embed_code, $embed_style_matches, PREG_SET_ORDER);
-		$embed_script_matched = preg_match_all("|<script src='https://actionnetwork\.org/widgets/v[2-3]/([a-z_]+)/([-a-z0-9]+)\?format=js&source=widget(&style=full)?'>|", $embed_code, $embed_script_matches, PREG_SET_ORDER);
-
-		$embed_style = $embed_style_matched ? ( isset($embed_style_matches[0][1]) && $embed_style_matches[0][1] ? 'layout_only' : 'default' ) : 'no';
-		$embed_type = isset($embed_script_matches[0][1]) ? $embed_script_matches[0][1] : '';
-		if ($embed_type == 'letter') { $embed_type = 'advocacy_campaign'; }
-		if ($embed_type == 'fundraising') { $embed_type = 'fundraising_page'; }
-		$embed_size = isset($embed_script_matches[0][3]) && $embed_script_matches[0][3] ? 'full' : 'standard';
-
-		if (!$embed_title) {
-			if (isset($embed_script_matches[0][2]) && $embed_script_matches[0][2]) {
-				$embed_title = ucwords(str_replace('-',' ',$embed_script_matches[0][2]));
-			} else {
-				$return['notices']['error'][] = __('You must give your action a title', 'actionnetwork');
-				$return['errors']['#actionnetwork_add_embed_title'] = true;
+			$embed_title = isset($_REQUEST['actionnetwork_add_embed_title']) ? stripslashes($_REQUEST['actionnetwork_add_embed_title']) : '';
+			$embed_date_string = isset($_REQUEST['actionnetwork_add_embed_date']) ? stripslashes($_REQUEST['actionnetwork_add_embed_date']) : '';
+			$embed_date_time_hour = isset($_REQUEST['actionnetwork_add_embed_date_time_hour']) ? intval($_REQUEST['actionnetwork_add_embed_date_time_hour']) : 12;
+			$embed_date_time_minutes = isset($_REQUEST['actionnetwork_add_embed_date_time_minutes']) ? intval($_REQUEST['actionnetwork_add_embed_date_time_minutes']) : 0;
+			if ($embed_date_time_minutes < 10) { $embed_date_time_minutes = '0' . $embed_date_time_minutes; }
+			$embed_date_time_ampm = isset($_REQUEST['actionnetwork_add_embed_date_time_ampm']) ? _actionnetwork_validate_ampm($_REQUEST['actionnetwork_add_embed_date_time_ampm']) : 'am';
+			$embed_code = isset($_REQUEST['actionnetwork_add_embed_code']) ? stripslashes($_REQUEST['actionnetwork_add_embed_code']) : '';
+			$location = isset($_REQUEST['actionnetwork_add_location']) ? stripslashes($_REQUEST['actionnetwork_add_location']) : '';
+			$embed_wp_id = isset($_REQUEST['actionnetwork_embed_wp_id']) ? (int) $_REQUEST['actionnetwork_embed_wp_id'] : 0;
+			
+			$embed_valid = true;
+	
+			// parse embed code
+			$embed_style_matched = preg_match_all("/<link href='https:\/\/actionnetwork\.org\/css\/style-embed(-whitelabel)?\.css' rel='stylesheet' type='text\/css' \/>/", $embed_code, $embed_style_matches, PREG_SET_ORDER);
+			$embed_script_matched = preg_match_all("|<script src='https://actionnetwork\.org/widgets/v[2-3]/([a-z_]+)/([-a-z0-9]+)\?format=js&source=widget(&style=full)?'>|", $embed_code, $embed_script_matches, PREG_SET_ORDER);
+	
+			$embed_style = $embed_style_matched ? ( isset($embed_style_matches[0][1]) && $embed_style_matches[0][1] ? 'layout_only' : 'default' ) : 'no';
+			$embed_type = isset($embed_script_matches[0][1]) ? $embed_script_matches[0][1] : '';
+			if ($embed_type == 'letter') { $embed_type = 'advocacy_campaign'; }
+			if ($embed_type == 'fundraising') { $embed_type = 'fundraising_page'; }
+			$embed_size = isset($embed_script_matches[0][3]) && $embed_script_matches[0][3] ? 'full' : 'standard';
+	
+			if (!$embed_title) {
+				if (isset($embed_script_matches[0][2]) && $embed_script_matches[0][2]) {
+					$embed_title = ucwords(str_replace('-',' ',$embed_script_matches[0][2]));
+				} else {
+					$return['notices']['error'][] = __('You must give your action a title', 'actionnetwork');
+					$return['errors']['#actionnetwork_add_embed_title'] = true;
+					$return['actionnetwork_add_embed_date'] = $embed_date_string;
+					$return['actionnetwork_add_embed_date_time_hour'] = $embed_date_time_hour;
+					$return['actionnetwork_add_embed_date_time_minutes'] = $embed_date_time_minutes;
+					$return['actionnetwork_add_embed_date_time_ampm'] = $embed_date_time_ampm;
+					$return['actionnetwork_add_embed_code'] = $embed_code;
+					$return['actionnetwork_add_location'] = $location;
+					$embed_valid = false;
+				}
+			}
+			if (!$embed_code) {
+				// TODO: validate the embed code instead of just checking for it being non-empty
+				$return['notices']['error'][] = __('You must enter an embed code or description', 'actionnetwork');
+				$return['errors']['#actionnetwork_add_embed_code'] = true;
 				$return['actionnetwork_add_embed_date'] = $embed_date_string;
 				$return['actionnetwork_add_embed_date_time_hour'] = $embed_date_time_hour;
 				$return['actionnetwork_add_embed_date_time_minutes'] = $embed_date_time_minutes;
 				$return['actionnetwork_add_embed_date_time_ampm'] = $embed_date_time_ampm;
-				$return['actionnetwork_add_embed_code'] = $embed_code;
+				$return['actionnetwork_add_embed_title'] = $embed_title;
 				$return['actionnetwork_add_location'] = $location;
 				$embed_valid = false;
 			}
-		}
-		if (!$embed_code) {
-			// TODO: validate the embed code instead of just checking for it being non-empty
-			$return['notices']['error'][] = __('You must enter an embed code or description', 'actionnetwork');
-			$return['errors']['#actionnetwork_add_embed_code'] = true;
-			$return['actionnetwork_add_embed_date'] = $embed_date_string;
-			$return['actionnetwork_add_embed_date_time_hour'] = $embed_date_time_hour;
-			$return['actionnetwork_add_embed_date_time_minutes'] = $embed_date_time_minutes;
-			$return['actionnetwork_add_embed_date_time_ampm'] = $embed_date_time_ampm;
-			$return['actionnetwork_add_embed_title'] = $embed_title;
-			$return['actionnetwork_add_location'] = $location;
-			$embed_valid = false;
-		}
-		
-		// if there is an $embed_date, but no embed type, treat as an event
-		if ($embed_date_string && !$embed_type) {
-			$embed_type = 'event';
-		}
-		
-		// if there's no valid embed type, then the embed code is not valid
-		if (!in_array( $embed_type, array(
-				'petition','advocacy_campaign','event','ticketed_event','fundraising_page','form'
-		))) {
-			$return['notices']['error'][] = __('This does not seem to be a valid Action Network embed code', 'actionnetwork');
-			$return['actionnetwork_add_embed_date'] = $embed_date_string;
-			$return['actionnetwork_add_embed_date_time_hour'] = $embed_date_time_hour;
-			$return['actionnetwork_add_embed_date_time_minutes'] = $embed_date_time_minutes;
-			$return['actionnetwork_add_embed_date_time_ampm'] = $embed_date_time_ampm;
-			$return['actionnetwork_add_embed_title'] = $embed_title;
-			$return['actionnetwork_add_embed_code'] = $embed_code;
-			$return['actionnetwork_add_location'] = $location;
-			$return['errors']['#actionnetwork_add_embed_code'] = true;
-			$embed_valid = false;
-		}
-		
-		if ($embed_valid) {
 			
-			// if the type is event or ticketed_event, give a warning if there is no start_date
-			if ( ($embed_type == 'event' || $embed_type == 'ticketed_event') && !$embed_date_string) {
-				$return['notices']['updated'][] = __('Notice: if you do not add a start date to your event, it will not display on the calendar widget', 'actionnetwork');
-			}
-		
-			// if the type is *not* event or ticketed_event, and there is a date, give a warning that it won't be used
-			if ( ($embed_type != 'event') && ($event_type != 'ticketed_event') && $embed_date_string) {
-				$embed_date_string = '';
-				$return['notices']['updated'][] = __('Notice: the date entered in the "start date" field is not used for actions that are not events or ticketed events', 'actionnetwork');
+			// if there is an $embed_date, but no embed type, treat as an event
+			if ($embed_date_string && !$embed_type) {
+				$embed_type = 'event';
 			}
 			
-			// serialize location
-			$location_object = new stdClass();
-			$location_object->html = $location;
-			$location_serialized = serialize($location_object);
-			
-			// save to action
-			$table_name = $wpdb->prefix . 'actionnetwork';
-			$embed_field_name = 'embed_'.$embed_size.'_'.$embed_style.'_styles';
-
-			$data = array(
-				'type' => $embed_type,
-				'title' => $embed_title,
-				$embed_field_name => $embed_code,
-				'location' => $location_serialized,
-				'enabled' => 1,
-				'created_date' => (int) current_time('timestamp'),
-				'modified_date' => (int) current_time('timestamp'),
-			);
-			if ($embed_date_string) {
-				$embed_date_string .= ' '.$embed_date_time_hour.':'.$embed_date_time_minutes.' '.$embed_date_time_ampm;
-				$data['start_date'] = strtotime($embed_date_string);
+			// if there's no valid embed type, then the embed code is not valid
+			if (!in_array( $embed_type, array(
+					'petition','advocacy_campaign','event','ticketed_event','fundraising_page','form'
+			))) {
+				$return['notices']['error'][] = __('This does not seem to be a valid Action Network embed code', 'actionnetwork');
+				$return['actionnetwork_add_embed_date'] = $embed_date_string;
+				$return['actionnetwork_add_embed_date_time_hour'] = $embed_date_time_hour;
+				$return['actionnetwork_add_embed_date_time_minutes'] = $embed_date_time_minutes;
+				$return['actionnetwork_add_embed_date_time_ampm'] = $embed_date_time_ampm;
+				$return['actionnetwork_add_embed_title'] = $embed_title;
+				$return['actionnetwork_add_embed_code'] = $embed_code;
+				$return['actionnetwork_add_location'] = $location;
+				$return['errors']['#actionnetwork_add_embed_code'] = true;
+				$embed_valid = false;
 			}
-
-
-			$wpdb->insert($table_name, $data, array ( '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%d' ) );
 			
-			$__copy = __('Copy', 'actionnetwork');
-			$shortcode_copy = <<<EOHTML
+			if ($embed_valid) {
+				
+				// if the type is event or ticketed_event, give a warning if there is no start_date
+				if ( ($embed_type == 'event' || $embed_type == 'ticketed_event') && !$embed_date_string) {
+					$return['notices']['updated'][] = __('Notice: if you do not add a start date to your event, it will not display on the calendar widget', 'actionnetwork');
+				}
+			
+				// if the type is *not* event or ticketed_event, and there is a date, give a warning that it won't be used
+				if ( ($embed_type != 'event') && ($event_type != 'ticketed_event') && $embed_date_string) {
+					$embed_date_string = '';
+					$return['notices']['updated'][] = __('Notice: the date entered in the "start date" field is not used for actions that are not events or ticketed events', 'actionnetwork');
+				}
+				
+				// serialize location
+				$location_object = new stdClass();
+				$location_object->html = $location;
+				$location_serialized = serialize($location_object);
+				
+				// save to action
+				$table_name = $wpdb->prefix . 'actionnetwork_actions';
+				$embed_field_name = 'embed_'.$embed_size.'_'.$embed_style.'_styles';
+	
+				$data = array(
+					'type' => $embed_type,
+					'title' => $embed_title,
+					$embed_field_name => $embed_code,
+					'location' => $location_serialized,
+					'enabled' => 1,
+					'created_date' => (int) current_time('timestamp'),
+					'modified_date' => (int) current_time('timestamp'),
+				);
+				if ($embed_date_string) {
+					$embed_date_string .= ' '.$embed_date_time_hour.':'.$embed_date_time_minutes.' '.$embed_date_time_ampm;
+					$data['start_date'] = strtotime($embed_date_string);
+				}
+	
+	
+				$wpdb->insert($table_name, $data, array ( '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%d' ) );
+				
+				$__copy = __('Copy', 'actionnetwork');
+				$shortcode_copy = <<<EOHTML
 <span class="copy-wrapper">
 <input type="text" class="copy-text" readonly="readonly" id="shortcode-new-{$wpdb->insert_id}" value="[actionnetwork id={$wpdb->insert_id}]" /><button data-copytarget="#shortcode-new-{$wpdb->insert_id}" class="copy">$__copy</button>
 </span>
 EOHTML;
 
-			$return['notices']['updated'][] = sprintf(
-				/* translators: %s: The shortcode for the saved embed code */
-				__('Action saved. Shortcode: %s', 'actionnetwork'),
-				$shortcode_copy
-			);
+				$return['notices']['updated'][] = sprintf(
+					/* translators: %s: The shortcode for the saved embed code */
+					__('Action saved. Shortcode: %s', 'actionnetwork'),
+					$shortcode_copy
+				);
 
-			$return['actionnetwork_add_embed_title'] = '';
-			$return['actionnetwork_add_embed_code'] = '';
+				$return['actionnetwork_add_embed_title'] = '';
+				$return['actionnetwork_add_embed_code'] = '';
 
-			$return['tab'] = 'actions';
-		}
-		break;
+				$return['tab'] = 'actions';
+			}
+			break;
 		
 	}
 	
@@ -1200,6 +1203,7 @@ EOHTML;
 function actionnetwork_admin_page() {
 
 	global $actionnetwork_version;
+	global $wpdb;
 	
 	// defines Actionnetwork_Action_List class, which extends WP_List_Table
 	require_once( plugin_dir_path( __FILE__ ) . 'includes/actionnetwork-action-list.class.php' );
@@ -1214,7 +1218,7 @@ function actionnetwork_admin_page() {
 		'pressCtrlCToCopy' => __( 'please press Ctrl/Cmd+C to copy', 'actionnetwork' ),
 		'clearResults' => __( 'clear results', 'actionnetwork' ),
 		'changeAPIKey' => __( 'Change or delete API key', 'actionnetwork' ),
-		'confirmChangeAPIKey' => __( 'Are you sure you want to change or FUCK delete the API key? Doing so means any actions you have synced via the API will be deleted.', 'actionnetwork' ),
+		'confirmChangeAPIKey' => __( 'Are you sure you want to change or delete the API key? Doing so means any actions you have synced via the API will be deleted.', 'actionnetwork' ),
 		/* translators: %s: date of last sync */
 		'lastSynced' => __( 'Last synced %s', 'actionnetwork' ),
 	);
@@ -1260,19 +1264,16 @@ function actionnetwork_admin_page() {
 			}
 		}
 	}
-
-	// get API Key
-	$actionnetwork_api_key = get_option('actionnetwork_api_key');
-	$actionnetwork_api_key_child_1 = get_option('actionnetwork_api_key_child_1');
-	$actionnetwork_api_key_child_2 = get_option('actionnetwork_api_key_child_2');
 	
+	$sql = "SELECT * FROM {$wpdb->prefix}actionnetwork_groups;";
+	$groups = $wpdb -> get_results( $sql, ARRAY_A );
+
 	// get queue status - allow action_returns to override the option because
 	// we've started the queue processing in a separate process, which might not
 	// have reset the option yet
 	$queue_status = isset($action_returns['queue_status']) ? $action_returns['queue_status'] : get_option('actionnetwork_queue_status', 'empty');
-
-	?>
 	
+	?>
 	<div class='wrap'>
 		
 		<h1><img src="<?php echo plugins_url('logo-action-network.png', __FILE__); ?>" /> Action Network
@@ -1284,8 +1285,6 @@ function actionnetwork_admin_page() {
 		<div class="wrap-inner">
 
 			<?php if ($notices_html) { echo $notices_html; } ?>
-
-				<?php if ($actionnetwork_api_key) : ?>
 				<form method="post" action="" id="actionnetwork-update-sync" class="alignright">
 					<?php
 						// nonce field for form submission
@@ -1314,68 +1313,6 @@ function actionnetwork_admin_page() {
 						}
 					?></div>
 				</form>
-				<?php endif; ?>
-				<?php if ($actionnetwork_api_key_child_1) : ?>
-				<form method="post" action="" id="actionnetwork-update-sync" class="alignright">
-					<?php
-						// nonce field for form submission
-						wp_nonce_field( 'actionnetwork_update_sync', 'actionnetwork_nonce_field' );
-						
-						// nonce field for ajax requests
-						wp_nonce_field( 'actionnetwork_get_queue_status', 'actionnetwork_ajax_nonce', false );
-					?>
-					<input type="hidden" name="actionnetwork_admin_action" id="actionnetwork-sync-action" value="update_sync" />
-					<input type="submit" id="actionnetwork-update-sync-submit" class="button" value="<?php _e('Full API Sync', 'actionnetwork'); ?>" <?php
-						// if we're currently processing a queue, disable this button
-						if ($queue_status == 'processing') { echo 'disabled="disabled" ';}
-					?>/>
-					<div class="last-sync"><?php
-						$last_updated = get_option('actionnetwork_cache_timestamp', 0);
-						if ($queue_status == 'processing') {
-							_e('API Sync queue is processing');
-						} elseif ($last_updated) {
-							printf(
-								/* translators: %s: date of last sync */
-								__('Last synced %s', 'actionnetwork'),
-								date('n/j/Y g:ia', $last_updated)
-							);
-						} else {
-							_e('This API key has not been synced', 'actionnetwork');
-						}
-					?></div>
-				</form>
-				<?php endif; ?>
-				<?php if ($actionnetwork_api_key_child_2) : ?>
-				<form method="post" action="" id="actionnetwork-update-sync" class="alignright">
-					<?php
-						// nonce field for form submission
-						wp_nonce_field( 'actionnetwork_update_sync', 'actionnetwork_nonce_field' );
-						
-						// nonce field for ajax requests
-						wp_nonce_field( 'actionnetwork_get_queue_status', 'actionnetwork_ajax_nonce', false );
-					?>
-					<input type="hidden" name="actionnetwork_admin_action" id="actionnetwork-sync-action" value="update_sync" />
-					<input type="submit" id="actionnetwork-update-sync-submit" class="button" value="<?php _e('Full API Sync', 'actionnetwork'); ?>" <?php
-						// if we're currently processing a queue, disable this button
-						if ($queue_status == 'processing') { echo 'disabled="disabled" ';}
-					?>/>
-					<div class="last-sync"><?php
-						$last_updated = get_option('actionnetwork_cache_timestamp', 0);
-						if ($queue_status == 'processing') {
-							_e('API Sync queue is processing');
-						} elseif ($last_updated) {
-							printf(
-								/* translators: %s: date of last sync */
-								__('Last synced %s', 'actionnetwork'),
-								date('n/j/Y g:ia', $last_updated)
-							);
-						} else {
-							_e('This API key has not been synced', 'actionnetwork');
-						}
-					?></div>
-				</form>
-				<?php endif; ?>
-				
 			<?php 	// if there is an edit form, just display that and quit
 				if (isset($action_returns['edit_event_form']) && $action_returns['edit_event_form']) {
 					echo $action_returns['edit_event_form'];
@@ -1512,26 +1449,25 @@ function actionnetwork_admin_page() {
 					<input type="hidden" name="actionnetwork_admin_action" value="update_api_key" />
 					<input type="hidden" name="actionnetwork_tab" value="settings" />
 
-					<table class="form-table"><tbody>
-						<tr valign="top">
-							<th scope="row"><label for="actionnetwork_api_key"><?php _e('Action Network API Key', 'actionnetwork'); ?></label></th>
-							<td>
-								<input id="actionnetwork_api_key" name="actionnetwork_api_key" type="text" value="<?php esc_attr_e($actionnetwork_api_key); ?>" />
-							</td>
-						</tr>
-						<tr>
-							<th scope="row"><label for="actionnetwork_api_key_child_1"><?php _e('Action Network API Key', 'actionnetwork'); ?></label></th>
-							<td>
-								<input id="actionnetwork_api_key_child_1" name="actionnetwork_api_key_child_1" type="text" value="<?php esc_attr_e($actionnetwork_api_key_child_1); ?>" />
-							</td>
-						</tr>
-						<tr valign="top">
-							<th scope="row"><label for="actionnetwork_api_key_child_2"><?php _e('Action Network API Key', 'actionnetwork'); ?></label></th>
-							<td>
-								<input id="actionnetwork_api_key_child_2" name="actionnetwork_api_key_child_2" type="text" value="<?php esc_attr_e($actionnetwork_api_key_child_2); ?>" />
-							</td>
-						</tr>
-					</tbody></table>
+					<table class="form-table">
+						<tbody id="api_keys">
+							<tr valign="top">
+								<?php for($i=1; $i<=sizeof($groups); $i++){ ?>
+								<th scope="row">
+									<?php echo '<label for="actionnetwork-api-key-<?php echo($i); ?>">_e("Action Network API Key", "actionnetwork")</label>'; ?>
+								</th>
+								<td>
+									<?php echo '<input id="actionnetwork-api-key-$i" class="actionnetwork-api-key" name="actionnetwork-api-key-$i" type="text" value="esc_attr_e($groups[i-1]->api_key"/>'; ?>
+								</td>"
+								<?php } ?>
+<!-- 								<th scope="row"><label for="actionnetwork_api_key"><?php _e('Action Network API Key', 'actionnetwork'); ?></label></th>
+								<td>
+									<input id="actionnetwork-api-key-1" class="actionnetwork-api-key" name="actionnetwork-api-key-1" type="text" value="<?php esc_attr_e($actionnetwork_api_key); ?>" />
+								</td> -->
+							</tr>
+						</tbody>
+					</table>
+					<p class="add-api-key"><input id="actionnetwork-options-form-add-api-key" class="button-primary" value="<?php _e('Add API Key', 'actionnetwork'); ?>" /></p>
 					<p class="submit"><input type="submit" id="actionnetwork-options-form-submit" class="button-primary" value="<?php _e('Save Settings', 'actionnetwork'); ?>" /></p>
 				</form>
 			</div>

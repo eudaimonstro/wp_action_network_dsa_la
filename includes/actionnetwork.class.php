@@ -26,9 +26,11 @@ class ActionNetwork {
 		// if endpoint is passed as an absolute URL (i.e., if it came from an API response), remove the base URL
 		$endpoint = str_replace($this->api_base_url,'',$endpoint);
 
-		if (isset($object->g_id)){
-			$api_key = $object->g_id;
-			unset($object->g_id);
+		if (isset($object->group_id)){
+			$group_key = array_search($object->group_id, array_column($groups, "group_id"));
+			$group = $groups[$group_key];
+			$api_key = $group["api_key"];
+			unset($object->group_id);
 		} else {
 			trigger_error('no api key associated with object', E_USER_ERROR);
 		}

@@ -60,8 +60,8 @@ class ActionNetwork_Action_Widget extends WP_Widget {
 		
 		global $wpdb;
 		
-		$table_name = $wpdb->prefix . 'actionnetwork';
-		$actions = $wpdb->get_results("SELECT wp_id, title, type FROM $table_name WHERE enabled=1 AND hidden=0");
+		$table_name = $wpdb->prefix . 'actionnetwork_actions';
+		$actions = $wpdb->get_results("SELECT wp_id, g_id, title, type FROM $table_name WHERE enabled=1 AND hidden=0");
 		$actions_list = array();
 		foreach ($actions as $action) {
 			$actions_list[ $action->wp_id ] = $action->title . ' (' . $action->type . ')';
@@ -794,6 +794,9 @@ class ActionNetwork_Signup_Widget extends WP_Widget {
 		$ActionNetwork = new ActionNetwork($actionnetwork_api_key);
 		$tags_response = $ActionNetwork->getFullSimpleCollection( 'tags' );
 		$tags = array();
+
+		$groups = $wpdb->get_results;
+
 		if ( ! isset( $tags_response->error ) ) {
 			foreach ( $tags_response as $tag_item ) {
 				if ( isset($tag_item['title']) ) { $tags[] = $tag_item['title']; }

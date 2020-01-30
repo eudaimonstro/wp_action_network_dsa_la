@@ -21,7 +21,7 @@ class Actionnetwork_Sync extends ActionNetwork {
 
 		// mark all existing API-synced actions for deletion
 		// (any that are still synced will be un-marked)
-		$wpdb->query("UPDATE {$wpdb->prefix}actionnetwork SET enabled=-1 WHERE an_id != ''");
+		$wpdb->query("UPDATE {$wpdb->prefix}actionnetwork_actions SET enabled=-1 WHERE an_id != ''");
 		
 		// load actions from Action Network into the queue
 		foreach ($this->endpoints as $endpoint) {
@@ -159,6 +159,7 @@ class Actionnetwork_Sync extends ActionNetwork {
 		
 		// load an_id, created_date, modified_date, name, title, start_date into $data
 		$data['an_id'] = $this->getResourceId($resource);
+		$data['g_id'] = isset($resource->group_id) ? $resource->group_id : null;
 		$data['created_date'] = isset($resource->created_date) ? strtotime($resource->created_date) : null;
 		$data['modified_date'] = isset($resource->modified_date) ? strtotime($resource->modified_date) : null;
 		$data['start_date'] = isset($resource->start_date) ? strtotime($resource->start_date) : null;
@@ -188,14 +189,14 @@ class Actionnetwork_Sync extends ActionNetwork {
 
 		// check if action exists in database
 		// if it does, we don't need to get embed codes, because those never change
-		$sql = "SELECT COUNT(*) FROM {$wpdb->prefix}actionnetwork WHERE an_id='{$data['an_id']}'";
+		$sql = "SELECT COUNT(*) FROM {$wpdb->prefix}actionnetwork_actions WHERE an_id='{$data['an_id']}'";
 		$count = $wpdb->get_var( $sql );
 		if ($count) {
 			// if modified_date is more recent than latest api sync, update
 			$last_updated = get_option('actionnetwork_cache_timestamp', 0);
 			if ($last_updated < $data['modified_date']) {
 				$wpdb->update(
-					$wpdb->prefix.'actionnetwork',
+					$wpdb->prefix.'actionnetwork_actions',
 					$data,
 					array( 'an_id' => $data['an_id'] )
 				);
@@ -204,7 +205,7 @@ class Actionnetwork_Sync extends ActionNetwork {
 			// otherwise just reset the 'enabled' field (to prevent deletion, and hide events whose start date has passed)
 			} else {
 				$wpdb->update(
-					$wpdb->prefix.'actionnetwork',
+					$wpdb->prefix.'actionnetwork_actions',
 					array( 'enabled' => $data['enabled'] ),
 					array( 'an_id' => $data['an_id'] )
 				);
@@ -215,7 +216,7 @@ class Actionnetwork_Sync extends ActionNetwork {
 			$embed_codes = $this->getEmbedCodes($resource, true);
 			$data = array_merge($data, $this->cleanEmbedCodes($embed_codes));
 			$wpdb->insert(
-				$wpdb->prefix.'actionnetwork',
+				$wpdb->prefix.'actionnetwork_actions',
 				$data
 			);
 			$this->inserted++;
@@ -251,7 +252,7 @@ class Actionnetwork_Sync extends ActionNetwork {
 		$wpdb->query("DELETE FROM {$wpdb->prefix}actionnetwork_queue WHERE processed = 1");
 		
 		// remove all API-synced action that are still marked for deletion
-		$this->deleted = $wpdb->query("DELETE FROM {$wpdb->prefix}actionnetwork WHERE an_id != '' AND enabled=-1");
+		$this->deleted = $wpdb->query("DELETE FROM {$wpdb->prefix}actionnetwork_actions WHERE an_id != '' AND enabled=-1");
 		
 		// update queue status and cache timestamps options
 		update_option( 'actionnetwork_queue_status', 'empty' );
