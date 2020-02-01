@@ -13,8 +13,6 @@ class ActionNetworkGroup {
 	private $api_key = '';
 
 	public function __construct($api_key) {
-		global $wpdb;
-
 		$this->api_key = $api_key;
 
 		if(!extension_loaded('curl')) trigger_error('ActionNetwork requires PHP cURL', E_USER_ERROR);

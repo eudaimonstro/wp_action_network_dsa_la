@@ -9,8 +9,8 @@ class Actionnetwork_Sync extends ActionNetworkGroup {
 	private $nestingLevel = 0;
 	private $endpoints = array( 'petitions', 'events', 'fundraising_pages', 'advocacy_campaigns', 'forms' );
 	
-	function __construct() {
-		parent::__construct();
+	function __construct($api_key) {
+		parent::__construct($api_key);
 		$this->processStartTime = time();
 	}
 	
@@ -101,6 +101,7 @@ class Actionnetwork_Sync extends ActionNetworkGroup {
 		if ($start_new_process) {
 			
 			$ajax_url = admin_url( 'admin-ajax.php' );
+			$ajax_url = "http://localhost/wp-admin/admin-ajax.php";
 
 			// since we're making this call from the server, we can't use a nonce
 			$timeint = time() / mt_rand( 1, 10 ) * mt_rand( 1, 10 );

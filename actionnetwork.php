@@ -18,7 +18,7 @@
  */
 
 if (!class_exists('ActionNetwork')) {
-	require_once( plugin_dir_path( __FILE__ ) . 'includes/actionnetwork.class.php' );
+	require_once( plugin_dir_path( __FILE__ ) . 'includes/actionnetwork-group.class.php' );
 }
 if (!class_exists('ActionNetwork_Sync')) {
 	require_once( plugin_dir_path( __FILE__ ) . 'includes/actionnetwork-sync.class.php' );
@@ -140,16 +140,17 @@ function actionnetwork_install() {
 			resource_id bigint(2) NOT NULL AUTO_INCREMENT,
 			resource text NOT NULL,
 			endpoint varchar(255) DEFAULT '' NOT NULL,
+			g_id mediumint(9) NOT NULL,
 			processed tinyint(1) DEFAULT 0 NOT NULL,
 			PRIMARY KEY  (resource_id)
 		) $charset_collate;";
 
 		$table_name_groups = $wpdb->prefix . 'actionnetwork_groups';
 		$sql_groups = "CREATE TABLE $table_name_groups (
-			group_id mediumint(9) NOT NULL AUTO_INCREMENT,
+			g_id mediumint(9) NOT NULL AUTO_INCREMENT,
 			api_key varchar(64) DEFAULT '' NOT NULL,
 			name varchar(255) DEFAULT '' NOT NULL,
-			PRIMARY KEY  (group_id)
+			PRIMARY KEY  (g_id)
 		) $charset_collate;";
 
 		require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
@@ -618,6 +619,7 @@ function actionnetwork_cron_sync() {
 
 	// initiate a background process by making a call to the "ajax" URL
 	$ajax_url = admin_url( 'admin-ajax.php' );
+	$ajax_url = "http://localhost/wp-admin/admin-ajax.php";
 
 	// since we're making this call from the server, we can't use a nonce
 	// because the user id could be different. so create a token
@@ -665,7 +667,7 @@ function actionnetwork_process_queue(){
 	// or status is processing and queue_action is continue
 	if ((($queue_action == 'init') && ($status == 'empty'))||(($queue_action == 'continue') && ($status == 'processing'))) {
 	
-		$sync = new Actionnetwork_Sync();
+		$sync = new Actionnetwork_Sync('4bd2ee90518f5f0bb9cf0a8cc07518c1');
 		$sync->updated = $updated;
 		$sync->inserted = $inserted;
 		$sync->new_only = $new_only;
@@ -683,7 +685,8 @@ add_action( 'wp_ajax_nopriv_actionnetwork_process_queue', 'actionnetwork_process
 
 function actionnetwork_get_queue_status(){
 	check_ajax_referer( 'actionnetwork_get_queue_status', 'actionnetwork_ajax_nonce' );
-	$sync = new Actionnetwork_Sync();
+	$syncing_results = [];
+	$sync = new Actionnetwork_Sync('4bd2ee90518f5f0bb9cf0a8cc07518c1');
 	$status = $sync->getQueueStatus();
 	$status['text'] = __('API Sync queue is '.$status['status'].'.', 'actionnetwork');
 	if ($status['status'] == 'processing') {
@@ -792,6 +795,7 @@ function _actionnetwork_admin_handle_actions(){
 								
 								// initiate a background process by making a call to the "ajax" URL
 								$ajax_url = admin_url( 'admin-ajax.php' );
+								$ajax_url = "http://localhost/wp-admin/admin-ajax.php";
 		
 								// since we're making this call from the server, we can't use a nonce
 								// because the user id would be different. so create a token
@@ -837,6 +841,7 @@ function _actionnetwork_admin_handle_actions(){
 		
 				// initiate a background process by making a call to the "ajax" URL
 				$ajax_url = admin_url( 'admin-ajax.php' );
+				$ajax_url = "http://localhost/wp-admin/admin-ajax.php";
 
 				// since we're making this call from the server, we can't use a nonce
 				// because the user id would be different. so create a token
