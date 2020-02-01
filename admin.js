@@ -1,4 +1,4 @@
-jQuery(document).ready(function($) {
+jQuery(document).ready(function ($) {
 	/**
 	 * Admin tabs
 	 */
@@ -11,7 +11,7 @@ jQuery(document).ready(function($) {
 	}
 	var currentTab = $('.wrap .nav-tab-wrapper .nav-tab-active').attr('href');
 	$(currentTab).show();
-	$('.wrap .nav-tab-wrapper .nav-tab, .wrap h1 .page-title-action').click(function(event) {
+	$('.wrap .nav-tab-wrapper .nav-tab, .wrap h1 .page-title-action').click(function (event) {
 		var showTab = $(this).attr('href');
 		$('.wrap .nav-tab-wrapper .nav-tab-active').removeClass('nav-tab-active');
 		if ($(this).hasClass('nav-tab')) {
@@ -29,13 +29,13 @@ jQuery(document).ready(function($) {
 	/**
 	 * Form validation
 	 */
-	$('form .error').focus(function() {
+	$('form .error').focus(function () {
 		$(this).removeClass('error');
 	});
 	/**
 	 * Copy to clipboard
 	 */
-	$('button.copy').click(function(event) {
+	$('button.copy').click(function (event) {
 		event.preventDefault();
 		var $self = $(this);
 		var $input = $($self.attr('data-copytarget'));
@@ -46,7 +46,7 @@ jQuery(document).ready(function($) {
 				document.execCommand('copy');
 				var copyText = $self.text();
 				$self.addClass('copied').text(actionnetworkText.copied);
-				setTimeout(function() {
+				setTimeout(function () {
 					$self.removeClass('copied').text(copyText);
 				}, 400);
 				$input.blur();
@@ -59,7 +59,7 @@ jQuery(document).ready(function($) {
 	 * Append clear search results link to search results subtitle
 	 */
 	$('.search-results-title').append(' (<a class="search-results-clear" href="#">' + actionnetworkText.clearResults + '</a>)');
-	$('a.search-results-clear').click(function(event) {
+	$('a.search-results-clear').click(function (event) {
 		event.preventDefault();
 		$('#action-search-input').val('');
 		$('#actionnetwork-actions-filter').submit();
@@ -69,17 +69,17 @@ jQuery(document).ready(function($) {
 	 */
 	var shortCodeOptionsText = $('#shortcode-options').text();
 	$('#shortcode-options').hide();
-	$('.shortcode-options-link a').click(function(event) {
+	$('.shortcode-options-link a').click(function (event) {
 		event.preventDefault();
 		alert(shortCodeOptionsText);
 	});
 	/**
 	 * If there is an existing API Key, make sure user is sure they want to change it
 	 */
-	if ($('#actionnetwork_api_key').length && $('#actionnetwork_api_key').val().length)  {
+	if ($('#actionnetwork_api_key').length && $('#actionnetwork_api_key').val().length) {
 		$('#actionnetwork_api_key').attr('readonly', 'readonly');
 		$('#actionnetwork_api_key').after('<button id="actionnetwork_api_key_change">' + actionnetworkText.changeAPIKey + '</button>');
-		$('#actionnetwork_api_key_change').click(function(event) {
+		$('#actionnetwork_api_key_change').click(function (event) {
 			event.preventDefault();
 			if (confirm(actionnetworkText.confirmChangeAPIKey)) {
 				$('#actionnetwork_api_key_change').remove();
@@ -87,15 +87,15 @@ jQuery(document).ready(function($) {
 			}
 		});
 	}
-	$('#actionnetwork-options-form-add-api-key').click(function(event){
+	$('#actionnetwork-options-form-add-api-key').click(function (event) {
 		event.preventDefault();
 		apiNumber = $('.actionnetwork-api-key').length;
-		tag = 	"<tr>\
+		tag = "<tr>\
 					<td>\
 						<input id=\"actionnetwork-group-name-" + apiNumber + "\" class=\"actionnetwork-group-name\" name=\"actionnetwork-group-name[" + apiNumber + "]\" type=\"text\"/>\
 					</td>\
 					<td>\
-						<input id=\"actionnetwork-api-key-" + apiNumber + "\" class=\"actionnetwork-api-key\" name=\"actionnetwork-api-key[" + apiNumber + "\]\" type=\"text\"/>\
+						<input id=\"actionnetwork-group-api-key-" + apiNumber + "\" class=\"actionnetwork-group-api-key\" name=\"actionnetwork-group-api-key[" + apiNumber + "\]\" type=\"text\"/>\
 					</td>\
 				</tr>";
 		$('#api_keys').append(tag);
@@ -106,12 +106,12 @@ jQuery(document).ready(function($) {
 	if ($('#actionnetwork-update-notice-sync-started').length) {
 		$('#actionnetwork-update-notice-sync-started p').append('<img src="images/loading.gif" class="loading" />');
 		$('#actionnetwork-actions-filter').hide();
-		updateSyncStatus = setInterval(function() {
+		updateSyncStatus = setInterval(function () {
 			data = {
 				action: 'actionnetwork_get_queue_status',
 				actionnetwork_ajax_nonce: $('#actionnetwork_ajax_nonce').val()
 			}
-			jQuery.get(ajaxurl, data, function(response) {
+			jQuery.get(ajaxurl, data, function (response) {
 				$('#actionnetwork-update-notice-sync-started p').text(response.text);
 				$('#actionnetwork-error-notice-sync-started p').append('<img src="images/loading.gif" class="loading" />');
 				if (response.status == 'complete') {

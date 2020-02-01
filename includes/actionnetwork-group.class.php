@@ -10,10 +10,12 @@
 class ActionNetworkGroup {
 	private $api_version = '2';
 	private $api_base_url = 'https://actionnetwork.org/api/v2/';
-	private $api_key = '';
+	private $group = null;
 
-	public function __construct($api_key) {
+	public function __construct($id = '', $api_key = '', $name = '') {
+		$this->id = $id;
 		$this->api_key = $api_key;
+		$this->name = $name;
 
 		if(!extension_loaded('curl')) trigger_error('ActionNetwork requires PHP cURL', E_USER_ERROR);
 	}
@@ -22,12 +24,6 @@ class ActionNetworkGroup {
 		
 		// if endpoint is passed as an absolute URL (i.e., if it came from an API response), remove the base URL
 		$endpoint = str_replace($this->api_base_url,'',$endpoint);
-
-		// if (isset($object->group_id)){
-		// 	unset($object->group_id);
-		// } else {
-		// 	trigger_error('no api key associated with object', E_USER_ERROR);
-		// }
 
 		$ch = curl_init();
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
@@ -38,7 +34,7 @@ class ActionNetworkGroup {
 				$json = json_encode($object);
 				curl_setopt($ch, CURLOPT_POSTFIELDS, $json);
 				curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-					'OSDI-API-Token: '.$this->api_key,
+					'OSDI-API-Token: '.$this->group->api_key,
 					'Content-Type: application/json',
 					'Content-Length: ' . strlen($json))
 				);
@@ -152,8 +148,8 @@ class ActionNetworkGroup {
 	 * $total : the total number of resources in the page or collection
 	 * $this : if an independent php function, will be passed the ActionNetwork object
 	 */
-	public function traverseCollection($endpoint, $callback) {
-		$response = $this->getCollection($endpoint);
+	public function traverseCollection($endpoint, $group, $callback) {
+		$response = $this->getCollection($endpoint, $group);
 		$this->traverseCollectionPage($endpoint, $response, $callback);
 		return $response;
 	}

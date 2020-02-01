@@ -9,8 +9,8 @@ class Actionnetwork_Sync extends ActionNetworkGroup {
 	private $nestingLevel = 0;
 	private $endpoints = array( 'petitions', 'events', 'fundraising_pages', 'advocacy_campaigns', 'forms' );
 	
-	function __construct($api_key) {
-		parent::__construct($api_key);
+	function __construct($group = null) {
+		parent::__construct($group);
 		$this->processStartTime = time();
 	}
 	
@@ -37,6 +37,7 @@ class Actionnetwork_Sync extends ActionNetworkGroup {
 			array (
 				'resource' => serialize($resource),
 				'endpoint' => $endpoint,
+				'g_id' => $this->group->api_key,
 				'processed' => 0,
 			)
 		);
@@ -101,7 +102,6 @@ class Actionnetwork_Sync extends ActionNetworkGroup {
 		if ($start_new_process) {
 			
 			$ajax_url = admin_url( 'admin-ajax.php' );
-			$ajax_url = "http://localhost/wp-admin/admin-ajax.php";
 
 			// since we're making this call from the server, we can't use a nonce
 			$timeint = time() / mt_rand( 1, 10 ) * mt_rand( 1, 10 );
@@ -158,9 +158,9 @@ class Actionnetwork_Sync extends ActionNetworkGroup {
 		
 		$data = array();
 		
-		// load an_id, created_date, modified_date, name, title, start_date into $data
+		// load an_id, g_id, created_date, modified_date, name, title, start_date into $data
 		$data['an_id'] = $this->getResourceId($resource);
-		$data['g_id'] = isset($resource->group_id) ? $resource->group_id : null;
+		$data['g_id'] = isset($resource->g_id) ? $resource->g_id : '';
 		$data['created_date'] = isset($resource->created_date) ? strtotime($resource->created_date) : null;
 		$data['modified_date'] = isset($resource->modified_date) ? strtotime($resource->modified_date) : null;
 		$data['start_date'] = isset($resource->start_date) ? strtotime($resource->start_date) : null;

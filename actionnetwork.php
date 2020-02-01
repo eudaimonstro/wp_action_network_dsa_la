@@ -132,22 +132,28 @@ function actionnetwork_install() {
 			location text NOT NULL,
 			enabled tinyint(1) DEFAULT 0 NOT NULL,
 			hidden tinyint(1) DEFAULT 0 NOT NULL,
-			PRIMARY KEY  (wp_id)
+			PRIMARY KEY  (wp_id),
+			FOREIGN KEY (g_id)
+				REFERENCES actionnetwork_groups(id)
+				ON DELETE CASCADE
 		) $charset_collate;";
 		
 		$table_name_queue = $wpdb->prefix . 'actionnetwork_queue';
 		$sql_queue = "CREATE TABLE $table_name_queue (
-			resource_id bigint(2) NOT NULL AUTO_INCREMENT,
+			id mediumint(9) NOT NULL AUTO_INCREMENT,
 			resource text NOT NULL,
 			endpoint varchar(255) DEFAULT '' NOT NULL,
 			g_id mediumint(9) NOT NULL,
 			processed tinyint(1) DEFAULT 0 NOT NULL,
-			PRIMARY KEY  (resource_id)
+			PRIMARY KEY  (resource_id),
+			FOREIGN KEY (g_id)
+				REFERENCES actionnetwork_groups(id)
+				ON DELETE CASCADE
 		) $charset_collate;";
 
 		$table_name_groups = $wpdb->prefix . 'actionnetwork_groups';
 		$sql_groups = "CREATE TABLE $table_name_groups (
-			g_id mediumint(9) NOT NULL AUTO_INCREMENT,
+			id mediumint(9) NOT NULL AUTO_INCREMENT,
 			api_key varchar(64) DEFAULT '' NOT NULL,
 			name varchar(255) DEFAULT '' NOT NULL,
 			PRIMARY KEY  (g_id)
@@ -666,13 +672,16 @@ function actionnetwork_process_queue(){
 	// only do something if status is empty & queue_action is init,
 	// or status is processing and queue_action is continue
 	if ((($queue_action == 'init') && ($status == 'empty'))||(($queue_action == 'continue') && ($status == 'processing'))) {
-	
-		$sync = new Actionnetwork_Sync('4bd2ee90518f5f0bb9cf0a8cc07518c1');
-		$sync->updated = $updated;
-		$sync->inserted = $inserted;
-		$sync->new_only = $new_only;
-		if ($queue_action == 'init') { $sync->init(); }
-		$sync->processQueue();
+		$sql = "SELECT * FROM 'actionnetwork_groups';";
+		$groups = $wpdb->get_results($sql, OBJECT);
+		foreach($groups as $group){
+			$sync = new Actionnetwork_Sync($group);
+			$sync->updated = $updated;
+			$sync->inserted = $inserted;
+			$sync->new_only = $new_only;
+			if ($queue_action == 'init') { $sync->init(); }
+			$sync->processQueue();
+		}
 		
 		// error_log("New Actionnetwork_Sync created; current state:\n\n" . print_r( $sync, 1), 0 );
 	
@@ -686,7 +695,7 @@ add_action( 'wp_ajax_nopriv_actionnetwork_process_queue', 'actionnetwork_process
 function actionnetwork_get_queue_status(){
 	check_ajax_referer( 'actionnetwork_get_queue_status', 'actionnetwork_ajax_nonce' );
 	$syncing_results = [];
-	$sync = new Actionnetwork_Sync('4bd2ee90518f5f0bb9cf0a8cc07518c1');
+	$sync = new Actionnetwork_Sync();
 	$status = $sync->getQueueStatus();
 	$status['text'] = __('API Sync queue is '.$status['status'].'.', 'actionnetwork');
 	if ($status['status'] == 'processing') {
@@ -732,20 +741,22 @@ function _actionnetwork_admin_handle_actions(){
 	
 		case 'update_api_key':
 
-			foreach ( $_REQUEST['actionnetwork-api-key'] as $i=>$key) {
+			foreach ( $_REQUEST['actionnetwork-group-api-key'] as $i=>$key) {
 
 				$debug = "update_api_key case matched\n";
 				
-				$actionnetwork_api_key = sanitize_key($key);
+				$group_api_key = sanitize_key($key);
+				$group_name = sanitize_text_field($_REQUEST['actionnetwork-group-name'][$i]);
+
 				// $debug .= "$api_key_name: $actionnetwork_api_key\n";
 				
 				$queue_status = get_option( 'actionnetwork_queue_status', 'empty' );
 				$debug .= "queue_status: $queue_status\n";
 
-				$sql = "SELECT EXISTS(SELECT * FROM {$wpdb->prefix}actionnetwork_groups WHERE api_key LIKE \"$actionnetwork_api_key\") as 'exists';";
-				$group = $wpdb->get_results( $sql );
+				$sql = "SELECT EXISTS(SELECT * FROM {$wpdb->prefix}actionnetwork_groups WHERE api_key LIKE \"$group_api_key\") as 'exists';";
+				$group = $wpdb->get_var( $sql );
 				
-				if ($group[0]->exists === "0") {
+				if ($group === null) {
 					
 					$debug .= "get_option did not match actionnetwork_api_key\n";
 					
@@ -756,16 +767,16 @@ function _actionnetwork_admin_handle_actions(){
 						
 						$debug .= "trying to change api key\n";
 						
-						$actionnetwork_api_key_is_valid = false;
+						$group_api_key_is_valid = false;
 						
 						// empty API key is "valid"
-						if (!$actionnetwork_api_key) {
-							$actionnetwork_api_key_is_valid = true;
+						if (!$group_api_key) {
+							$group_api_key_is_valid = true;
 						} else {
 						
 							// validate API key
-							$ActionNetwork = new ActionNetworkGroup($actionnetwork_api_key);
-							$validate = $ActionNetwork->call('petitions');
+							$group = new ActionNetworkGroup('', $group_api_key, $_REQUEST['actionnetwork-group-name'][$i]);
+							$validate = $group->call('petitions');
 						
 							$debug .= "validation returned:\n\n" . print_r($validate,1) . "\n\n";
 							
@@ -776,22 +787,22 @@ function _actionnetwork_admin_handle_actions(){
 									$return['notices']['error'][] = __( 'Error validating API key:', 'actionnetwork' ).' '.$actionnetwork_api_key;
 								}
 							} else {
-								$actionnetwork_api_key_is_valid = true;
+								$group_api_key_is_valid = true;
 							}
 							
 						}
 						
-						$debug .= $actionnetwork_api_key_is_valid ? "actionnetwork_api_key is valid\n" : "actionnetwork_api_key is not valid\n";
+						$debug .= $group_api_key_is_valid ? "actionnetwork_api_key is valid\n" : "actionnetwork_api_key is not valid\n";
 						
-						if ($actionnetwork_api_key_is_valid) {
+						if ($group_api_key_is_valid) {
 
-							$sql = "INSERT INTO {$wpdb->prefix}actionnetwork_groups (api_key, name) VALUES ('$key', '{$_REQUEST['actionnetwork-group-name'][$i]}')";
+							$sql = "INSERT INTO {$wpdb->prefix}actionnetwork_groups (api_key, name) VALUES ('$group_api_key', '$group_name')";
 							$wpdb->query( $sql );
 					
 							update_option('actionnetwork_cache_timestamp', 0);
 							$deleted = $wpdb->query("DELETE FROM {$wpdb->prefix}actionnetwork_actions WHERE an_id != ''");
 		
-							if ($actionnetwork_api_key) {
+							if ($group_api_key) {
 								
 								// initiate a background process by making a call to the "ajax" URL
 								$ajax_url = admin_url( 'admin-ajax.php' );
@@ -1482,7 +1493,7 @@ function actionnetwork_admin_page() {
 								</td>
 								<td>
 									<?php 
-										echo "<input id=\"actionnetwork-api-key-$i\" class=\"actionnetwork-api-key\" name=\"actionnetwork-api-key[$i]\" type=\"text\" value=\"{$groups[$i]->api_key}\"/>"; 
+										echo "<input id=\"actionnetwork-group-api-key-$i\" class=\"actionnetwork-group-api-key\" name=\"actionnetwork-group-api-key[$i]\" type=\"text\" value=\"{$groups[$i]->api_key}\"/>"; 
 									?>
 								</td>
 							</tr>
