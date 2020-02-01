@@ -1,6 +1,6 @@
 <?php
 	
-class Actionnetwork_Sync extends ActionNetwork {
+class Actionnetwork_Sync extends ActionNetworkGroup {
 	
 	public $updated = 0;
 	public $inserted = 0;

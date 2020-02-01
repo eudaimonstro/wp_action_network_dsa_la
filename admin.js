@@ -89,8 +89,15 @@ jQuery(document).ready(function($) {
 	}
 	$('#actionnetwork-options-form-add-api-key').click(function(event){
 		event.preventDefault();
-		apiNumber = $('.actionnetwork-api-key').length + 1;
-		tag = "<tr valign='top'><td><input id='actionnetwork-api-key-" + apiNumber + "' class='actionnetwork-api-key' name='actionnetwork-api-key-" + apiNumber + "' type='text' /></td></tr>";
+		apiNumber = $('.actionnetwork-api-key').length;
+		tag = 	"<tr>\
+					<td>\
+						<input id=\"actionnetwork-group-name-" + apiNumber + "\" class=\"actionnetwork-group-name\" name=\"actionnetwork-group-name[" + apiNumber + "]\" type=\"text\"/>\
+					</td>\
+					<td>\
+						<input id=\"actionnetwork-api-key-" + apiNumber + "\" class=\"actionnetwork-api-key\" name=\"actionnetwork-api-key[" + apiNumber + "\]\" type=\"text\"/>\
+					</td>\
+				</tr>";
 		$('#api_keys').append(tag);
 	})
 	/**

@@ -663,10 +663,7 @@ function actionnetwork_process_queue(){
 	
 	// only do something if status is empty & queue_action is init,
 	// or status is processing and queue_action is continue
-	if (
-			( ($queue_action == 'init') && ($status == 'empty') )
-			|| ( ($queue_action == 'continue') && ($status == 'processing') )
-		) {
+	if ((($queue_action == 'init') && ($status == 'empty'))||(($queue_action == 'continue') && ($status == 'processing'))) {
 	
 		$sync = new Actionnetwork_Sync();
 		$sync->updated = $updated;
@@ -720,8 +717,6 @@ function _actionnetwork_admin_handle_actions(){
 
 	global $wpdb;
 	$return = array();
-	$sql = "SELECT * FROM {$wpdb->prefix}actionnetwork_groups;";
-	$groups = $wpdb->get_results( $sql, ARRAY_A );
 	
 	if ( !isset($_REQUEST['actionnetwork_admin_action']) || !check_admin_referer(
 		'actionnetwork_'.$_REQUEST['actionnetwork_admin_action'], 'actionnetwork_nonce_field'
@@ -729,21 +724,25 @@ function _actionnetwork_admin_handle_actions(){
 			return false;
 	}
 	
+
 	switch ($_REQUEST['actionnetwork_admin_action']) {
 	
 		case 'update_api_key':
 
-			foreach ( $groups as $group) {
+			foreach ( $_REQUEST['actionnetwork-api-key'] as $i=>$key) {
 
 				$debug = "update_api_key case matched\n";
 				
-				$actionnetwork_api_key = sanitize_key($group->api_key);
-				$debug .= "$api_key_name: $actionnetwork_api_key\n";
+				$actionnetwork_api_key = sanitize_key($key);
+				// $debug .= "$api_key_name: $actionnetwork_api_key\n";
 				
 				$queue_status = get_option( 'actionnetwork_queue_status', 'empty' );
 				$debug .= "queue_status: $queue_status\n";
+
+				$sql = "SELECT EXISTS(SELECT * FROM {$wpdb->prefix}actionnetwork_groups WHERE api_key LIKE \"$actionnetwork_api_key\") as 'exists';";
+				$group = $wpdb->get_results( $sql );
 				
-				if (get_option($api_key_name, null) !== $actionnetwork_api_key) {
+				if ($group[0]->exists === "0") {
 					
 					$debug .= "get_option did not match actionnetwork_api_key\n";
 					
@@ -762,7 +761,7 @@ function _actionnetwork_admin_handle_actions(){
 						} else {
 						
 							// validate API key
-							$ActionNetwork = new ActionNetwork($actionnetwork_api_key);
+							$ActionNetwork = new ActionNetworkGroup($actionnetwork_api_key);
 							$validate = $ActionNetwork->call('petitions');
 						
 							$debug .= "validation returned:\n\n" . print_r($validate,1) . "\n\n";
@@ -782,6 +781,9 @@ function _actionnetwork_admin_handle_actions(){
 						$debug .= $actionnetwork_api_key_is_valid ? "actionnetwork_api_key is valid\n" : "actionnetwork_api_key is not valid\n";
 						
 						if ($actionnetwork_api_key_is_valid) {
+
+							$sql = "INSERT INTO {$wpdb->prefix}actionnetwork_groups (api_key, name) VALUES ('$key', '{$_REQUEST['actionnetwork-group-name'][$i]}')";
+							$wpdb->query( $sql );
 					
 							update_option('actionnetwork_cache_timestamp', 0);
 							$deleted = $wpdb->query("DELETE FROM {$wpdb->prefix}actionnetwork_actions WHERE an_id != ''");
@@ -1038,6 +1040,7 @@ EOHTML;
 		
 		case 'add_embed':
 			$embed_title = isset($_REQUEST['actionnetwork_add_embed_title']) ? stripslashes($_REQUEST['actionnetwork_add_embed_title']) : '';
+			$embed_group = isset($_REQUEST['actionnetwork_add_embed_group']) ? $_REQUEST['actionnetwork_add_embed_group'] : '';
 			$embed_date_string = isset($_REQUEST['actionnetwork_add_embed_date']) ? stripslashes($_REQUEST['actionnetwork_add_embed_date']) : '';
 			$embed_date_time_hour = isset($_REQUEST['actionnetwork_add_embed_date_time_hour']) ? intval($_REQUEST['actionnetwork_add_embed_date_time_hour']) : 12;
 			$embed_date_time_minutes = isset($_REQUEST['actionnetwork_add_embed_date_time_minutes']) ? intval($_REQUEST['actionnetwork_add_embed_date_time_minutes']) : 0;
@@ -1131,6 +1134,7 @@ EOHTML;
 				$embed_field_name = 'embed_'.$embed_size.'_'.$embed_style.'_styles';
 	
 				$data = array(
+					'g_id' => $embed_group,
 					'type' => $embed_type,
 					'title' => $embed_title,
 					$embed_field_name => $embed_code,
@@ -1161,7 +1165,9 @@ EOHTML;
 				);
 
 				$return['actionnetwork_add_embed_title'] = '';
+				$return['actionnetwork_add_embed_group'] = '';
 				$return['actionnetwork_add_embed_code'] = '';
+				
 
 				$return['tab'] = 'actions';
 			}
@@ -1266,7 +1272,7 @@ function actionnetwork_admin_page() {
 	}
 	
 	$sql = "SELECT * FROM {$wpdb->prefix}actionnetwork_groups;";
-	$groups = $wpdb -> get_results( $sql, ARRAY_A );
+	$groups = $wpdb -> get_results( $sql, OBJECT );
 
 	// get queue status - allow action_returns to override the option because
 	// we've started the queue processing in a separate process, which might not
@@ -1379,6 +1385,9 @@ function actionnetwork_admin_page() {
 						$actionnetwork_add_embed_title =
 							isset($action_returns['actionnetwork_add_embed_title']) ?
 							$action_returns['actionnetwork_add_embed_title'] : '';
+						$actionnetwork_add_embed_group =
+							isset($action_returns['actionnetwork_add_embed_group']) ?
+							$action_returns['actionnetwork_add_embed_group'] : '';
 						$actionnetwork_add_embed_date =
 							isset($action_returns['actionnetwork_add_embed_date']) ?
 							$action_returns['actionnetwork_add_embed_date'] : '';
@@ -1452,19 +1461,27 @@ function actionnetwork_admin_page() {
 					<table class="form-table">
 						<tbody id="api_keys">
 							<tr valign="top">
-								<?php for($i=1; $i<=sizeof($groups); $i++){ ?>
 								<th scope="row">
-									<?php echo '<label for="actionnetwork-api-key-<?php echo($i); ?>">_e("Action Network API Key", "actionnetwork")</label>'; ?>
+									<label ><?php _e("Group Name", "actionnetwork"); ?> </label>
 								</th>
-								<td>
-									<?php echo '<input id="actionnetwork-api-key-$i" class="actionnetwork-api-key" name="actionnetwork-api-key-$i" type="text" value="esc_attr_e($groups[i-1]->api_key"/>'; ?>
-								</td>"
-								<?php } ?>
-<!-- 								<th scope="row"><label for="actionnetwork_api_key"><?php _e('Action Network API Key', 'actionnetwork'); ?></label></th>
-								<td>
-									<input id="actionnetwork-api-key-1" class="actionnetwork-api-key" name="actionnetwork-api-key-1" type="text" value="<?php esc_attr_e($actionnetwork_api_key); ?>" />
-								</td> -->
+								<th scope="row">
+									<label ><?php _e("Action Network API Key", "actionnetwork"); ?> </label>
+								</th>
 							</tr>
+							<?php for($i=0; $i<sizeof($groups); $i++){ ?>
+							<tr valign="top">
+								<td>
+									<?php 
+										echo "<input id=\"actionnetwork-group-name-$i\" class=\"actionnetwork-group-name\" name=\"actionnetwork-group-name[$i]\" type=\"text\" value=\"{$groups[$i]->name}\"/>";
+									?>
+								</td>
+								<td>
+									<?php 
+										echo "<input id=\"actionnetwork-api-key-$i\" class=\"actionnetwork-api-key\" name=\"actionnetwork-api-key[$i]\" type=\"text\" value=\"{$groups[$i]->api_key}\"/>"; 
+									?>
+								</td>
+							</tr>
+							<?php } ?>
 						</tbody>
 					</table>
 					<p class="add-api-key"><input id="actionnetwork-options-form-add-api-key" class="button-primary" value="<?php _e('Add API Key', 'actionnetwork'); ?>" /></p>

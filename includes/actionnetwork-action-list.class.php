@@ -52,6 +52,7 @@ class Actionnetwork_Action_List extends WP_List_Table {
 			'cb' => '<input type="checkbox" />', //Render a checkbox instead of text
 			'title' => __( 'Title', 'actionnetwork' ),
 			'type' => __( 'Type', 'actionnetwork' ),
+			'group' => __( 'Group', 'actionnetwork' ),
 			'modified_date' => __( 'Modified', 'actionnetwork' ),
 			'shortcode' => __( 'Shortcode', 'actionnetwork' ),
 		);
@@ -65,8 +66,9 @@ class Actionnetwork_Action_List extends WP_List_Table {
 
     function get_sortable_columns() {
    	    $sortable_columns = array(
-   	        'title'    => array('title',false),
-   	        'type'     => array('type',false),
+   	        'title' => array('title',false),
+			'type' => array('type',false),
+			'group'	=> array('group', true),
    	        'modified_date' => array('modified_date',true),
 		);
         return $sortable_columns;
