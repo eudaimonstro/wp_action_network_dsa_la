@@ -22,6 +22,8 @@ if (!class_exists('ActionNetwork')) {
 }
 if (!class_exists('ActionNetwork_Sync')) {
 	require_once( plugin_dir_path( __FILE__ ) . 'includes/actionnetwork-sync.class.php' );
+	global $actionnetwork_sync;
+	$actionnetwork_sync = new ActionNetwork_Sync();
 }
 
 /**
@@ -132,10 +134,7 @@ function actionnetwork_install() {
 			location text NOT NULL,
 			enabled tinyint(1) DEFAULT 0 NOT NULL,
 			hidden tinyint(1) DEFAULT 0 NOT NULL,
-			PRIMARY KEY  (wp_id),
-			FOREIGN KEY (g_id)
-				REFERENCES actionnetwork_groups(id)
-				ON DELETE CASCADE
+			PRIMARY KEY  (wp_id)
 		) $charset_collate;";
 		
 		$table_name_queue = $wpdb->prefix . 'actionnetwork_queue';
@@ -145,10 +144,7 @@ function actionnetwork_install() {
 			endpoint varchar(255) DEFAULT '' NOT NULL,
 			g_id mediumint(9) NOT NULL,
 			processed tinyint(1) DEFAULT 0 NOT NULL,
-			PRIMARY KEY  (resource_id),
-			FOREIGN KEY (g_id)
-				REFERENCES actionnetwork_groups(id)
-				ON DELETE CASCADE
+			PRIMARY KEY  (id)
 		) $charset_collate;";
 
 		$table_name_groups = $wpdb->prefix . 'actionnetwork_groups';
@@ -156,7 +152,7 @@ function actionnetwork_install() {
 			id mediumint(9) NOT NULL AUTO_INCREMENT,
 			api_key varchar(64) DEFAULT '' NOT NULL,
 			name varchar(255) DEFAULT '' NOT NULL,
-			PRIMARY KEY  (g_id)
+			PRIMARY KEY  (id)
 		) $charset_collate;";
 
 		require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
@@ -649,6 +645,8 @@ add_action( 'actionnetwork_cron_daily', 'actionnetwork_cron_sync' );
  * Process ajax requests
  */
 function actionnetwork_process_queue(){
+
+	$sync = new Actionnetwork_Sync();
 	
 	// Don't lock up other requests while processing
 	session_write_close();
@@ -672,20 +670,13 @@ function actionnetwork_process_queue(){
 	// only do something if status is empty & queue_action is init,
 	// or status is processing and queue_action is continue
 	if ((($queue_action == 'init') && ($status == 'empty'))||(($queue_action == 'continue') && ($status == 'processing'))) {
-		$sql = "SELECT * FROM 'actionnetwork_groups';";
-		$groups = $wpdb->get_results($sql, OBJECT);
-		foreach($groups as $group){
-			$sync = new Actionnetwork_Sync($group);
-			$sync->updated = $updated;
-			$sync->inserted = $inserted;
-			$sync->new_only = $new_only;
-			if ($queue_action == 'init') { $sync->init(); }
-			$sync->processQueue();
-		}
+		$sync->new_only = $new_only;
+		if ($queue_action == 'init') { $sync->init(); }
+		$sync->processQueue();
+	}
 		
 		// error_log("New Actionnetwork_Sync created; current state:\n\n" . print_r( $sync, 1), 0 );
 	
-	}
 	
 	wp_die();
 }
@@ -695,29 +686,27 @@ add_action( 'wp_ajax_nopriv_actionnetwork_process_queue', 'actionnetwork_process
 function actionnetwork_get_queue_status(){
 	check_ajax_referer( 'actionnetwork_get_queue_status', 'actionnetwork_ajax_nonce' );
 	$syncing_results = [];
-	$sync = new Actionnetwork_Sync();
-	$status = $sync->getQueueStatus();
-	$status['text'] = __('API Sync queue is '.$status['status'].'.', 'actionnetwork');
-	if ($status['status'] == 'processing') {
-		$status['text'] .= ' ' . __(
+	$sync_status['text'] = __('API Sync queue is '.$sync_status['status'].'.', 'actionnetwork');
+	if ($sync_status['status'] == 'processing') {
+		$sync_status['text'] .= ' ' . __(
 			/* translators: first %d is number of items processed, second %d is total number of items in queue */
-			sprintf('%d of %d items processed.', $status['processed'], $status['total'])
+			sprintf('%d of %d items processed.', $sync_status['processed'], $sync_status['total'])
 		);
 	}
 	
 	// if status is "complete" or "empty," check if an admin notice has been set;
 	// if it has, return the admin notice as status.text & clear in options
-	if ( ($status['status'] == 'complete') || ($status['status'] == 'empty') ) {
+	if ( ($sync_status['status'] == 'complete') || ($sync_status['status'] == 'empty') ) {
 		$notices = get_option('actionnetwork_deferred_admin_notices', array());
 		if (isset($notices['api_sync_completed'])) {
-			$status['text'] = $notices['api_sync_completed'];
-			$status['status'] = 'complete';
+			$sync_status['text'] = $notices['api_sync_completed'];
+			$sync_status['status'] = 'complete';
 			// unset($notices['api_sync_completed']);
 			// update_option('actionnetwork_deferred_admin_notices', $notices);
 		}
 	}
 	
-	wp_send_json($status);
+	wp_send_json($sync_status);
 	wp_die();
 }
 add_action( 'wp_ajax_actionnetwork_get_queue_status', 'actionnetwork_get_queue_status' );
@@ -754,9 +743,9 @@ function _actionnetwork_admin_handle_actions(){
 				$debug .= "queue_status: $queue_status\n";
 
 				$sql = "SELECT EXISTS(SELECT * FROM {$wpdb->prefix}actionnetwork_groups WHERE api_key LIKE \"$group_api_key\") as 'exists';";
-				$group = $wpdb->get_var( $sql );
+				$group_exists = $wpdb->get_var( $sql );
 				
-				if ($group === null) {
+				if ($group_exists === "0") {
 					
 					$debug .= "get_option did not match actionnetwork_api_key\n";
 					
@@ -796,11 +785,15 @@ function _actionnetwork_admin_handle_actions(){
 						
 						if ($group_api_key_is_valid) {
 
-							$sql = "INSERT INTO {$wpdb->prefix}actionnetwork_groups (api_key, name) VALUES ('$group_api_key', '$group_name')";
-							$wpdb->query( $sql );
+							$group_table_name = $wpdb->prefix . 'actionnetwork_groups';
+							$group_data['api_key'] = $group_api_key;
+							$group_data['name'] = $group_name;
+							$wpdb->insert($group_table_name, $group_data);
 					
 							update_option('actionnetwork_cache_timestamp', 0);
-							$deleted = $wpdb->query("DELETE FROM {$wpdb->prefix}actionnetwork_actions WHERE an_id != ''");
+							$action_table_name = $wpdb->prefix . 'actionnetwork_actions';
+							$action_conditions['an_id'] = '%_%';
+							$deleted = $wpdb->delete($action_table_name, $action_conditions);
 		
 							if ($group_api_key) {
 								
@@ -823,7 +816,6 @@ function _actionnetwork_admin_handle_actions(){
 								$args = array( 'body' => $body, 'timeout' => 1 );
 								wp_remote_post( $ajax_url, $args );
 		
-								$queue_status = 'processing';
 								$return['queue_status'] = $queue_status;
 								
 								$return['notices']['updated']['sync-started'] = $deleted ? __('API key has been updated, actions synced via previous API key have been 	removed, and sync with new API key has been started', 'actionnetwork') : __('API key has been updated and sync with new API key has 	been started', 'actionnetwork');

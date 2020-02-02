@@ -1,27 +1,33 @@
 <?php
 	
-class Actionnetwork_Sync extends ActionNetworkGroup {
+class Actionnetwork_Sync {
 	
-	public $updated = 0;
-	public $inserted = 0;
-	public $deleted = 0;
 	private $processStartTime = 0;
 	private $nestingLevel = 0;
 	private $endpoints = array( 'petitions', 'events', 'fundraising_pages', 'advocacy_campaigns', 'forms' );
+	private $groups = [];
+	private $status;
+	private $db;
 	
-	function __construct($group = null) {
-		parent::__construct($group);
+	function __construct($groups = []) {
+		global $wpdb;
+		$this->db = $wpdb;
+		$groups_table_name = $wpdb->prefix . 'actionnetwork_groups';
+		$groups_sql = "SELECT * FROM $groups_table_name;";
+
+		$this->groups = $wpdb->get_results($groups_sql, ARRAY_A);
 		$this->processStartTime = time();
+		$this->status = new Actionnetwork_Sync_Status();
+
 	}
 	
 	function init() {
-		global $wpdb;
 
 		// error_log( "Actionnetwork_Sync::init called", 0 );
 
 		// mark all existing API-synced actions for deletion
 		// (any that are still synced will be un-marked)
-		$wpdb->query("UPDATE {$wpdb->prefix}actionnetwork_actions SET enabled=-1 WHERE an_id != ''");
+		$this->db->query("UPDATE {$this->db->prefix}actionnetwork_actions SET enabled=-1 WHERE an_id != ''");
 		
 		// load actions from Action Network into the queue
 		foreach ($this->endpoints as $endpoint) {
@@ -31,9 +37,8 @@ class Actionnetwork_Sync extends ActionNetworkGroup {
 	}
 	
 	function addToQueue( $resource, $endpoint, $index, $total ) {
-		global $wpdb;
-		$wpdb->insert(
-			$wpdb->prefix.'actionnetwork_queue',
+		$this->db->insert(
+			$this->db->prefix.'actionnetwork_queue',
 			array (
 				'resource' => serialize($resource),
 				'endpoint' => $endpoint,
@@ -44,40 +49,24 @@ class Actionnetwork_Sync extends ActionNetworkGroup {
 
 		// error_log( "Actionnetwork_Sync::addToQueue called; endpoint: $endpoint, index: $index, total: $total", 0 );
 	}
+
+	private function updateQueueStatus() {
+		$this->status->update_status();
+	}
 	
-	function getQueueStatus() {
-		global $wpdb;
-		$total = $wpdb->get_var( "SELECT COUNT(*) FROM ".$wpdb->prefix."actionnetwork_queue");
-		$processed = $wpdb->get_var( "SELECT COUNT(*) FROM ".$wpdb->prefix."actionnetwork_queue WHERE processed = 1");
-		if ($total == 0) {
-			$status = 'empty';
-		} elseif ($total && ($total == $processed)) {
-			$status = 'complete';
-		} else {
-			$status = 'processing';
-		}
-		
-		update_option( 'actionnetwork_queue_status', $status );
-		
-		return array(
-			'status' => $status,
-			'total' => $total,
-			'updated' => $this->updated,
-			'inserted' => $this->inserted,
-			'processed' => $processed,
-		);
+	public function getQueueStatus() {
+		return $this->status->get_status();
 	}
 	
 	function processQueue() {
 		
 		// check queue status
-		$status = $this->getQueueStatus();
 
 		// error_log( "Actionnetwork_Sync::processQueue called. Status:\n\n".print_r($status,1)."\n\n", 0 );
 
-		if ($status['status'] == 'empty') { return; }
-		if ($status['status'] == 'complete') {
-			$this->cleanUp();
+		if ($this->status->type === 'empty') { return; }
+		if ($this->status->type === 'complete') {
+			cleanQueue();
 			wp_die();
 			return;
 		} 
@@ -112,8 +101,9 @@ class Actionnetwork_Sync extends ActionNetworkGroup {
 			$body = array(
 				'action' => 'actionnetwork_process_queue',
 				'queue_action' => 'continue',
-				'updated' => $this->updated,
-				'inserted' => $this->inserted,
+				'updated' => $this->status->updated_action_count,
+				'inserted' => $this->status->inserted_action_count,
+				'deleted' => $this->status->deleted_action_count,
 				'token' => $token,
 			);
 			$args = array( 'body' => $body );
@@ -191,13 +181,13 @@ class Actionnetwork_Sync extends ActionNetworkGroup {
 		// check if action exists in database
 		// if it does, we don't need to get embed codes, because those never change
 		$sql = "SELECT COUNT(*) FROM {$wpdb->prefix}actionnetwork_actions WHERE an_id='{$data['an_id']}'";
-		$count = $wpdb->get_var( $sql );
+		$count = $this->db->get_var( $sql );
 		if ($count) {
 			// if modified_date is more recent than latest api sync, update
 			$last_updated = get_option('actionnetwork_cache_timestamp', 0);
 			if ($last_updated < $data['modified_date']) {
-				$wpdb->update(
-					$wpdb->prefix.'actionnetwork_actions',
+				$this->db->update(
+					$this->db->prefix.'actionnetwork_actions',
 					$data,
 					array( 'an_id' => $data['an_id'] )
 				);
@@ -205,8 +195,8 @@ class Actionnetwork_Sync extends ActionNetworkGroup {
 			
 			// otherwise just reset the 'enabled' field (to prevent deletion, and hide events whose start date has passed)
 			} else {
-				$wpdb->update(
-					$wpdb->prefix.'actionnetwork_actions',
+				$this->db->update(
+					$this->db->prefix.'actionnetwork_actions',
 					array( 'enabled' => $data['enabled'] ),
 					array( 'an_id' => $data['an_id'] )
 				);
@@ -216,16 +206,16 @@ class Actionnetwork_Sync extends ActionNetworkGroup {
 			// if action *doesn't* exist in the database, get embed codes, insert
 			$embed_codes = $this->getEmbedCodes($resource, true);
 			$data = array_merge($data, $this->cleanEmbedCodes($embed_codes));
-			$wpdb->insert(
-				$wpdb->prefix.'actionnetwork_actions',
+			$this->db->insert(
+				$this->db->prefix.'actionnetwork_actions',
 				$data
 			);
 			$this->inserted++;
 		}
 
 		// mark resource as processed
-		$wpdb->update(
-			$wpdb->prefix.'actionnetwork_queue',
+		$this->db->update(
+			$this->db->prefix.'actionnetwork_queue',
 			array( 'processed' => 1 ),
 			array( 'resource_id' => $resource_id )
 		);
@@ -246,17 +236,14 @@ class Actionnetwork_Sync extends ActionNetworkGroup {
 		return $embed_codes;
 	}
 	
-	function cleanUp() {
-		global $wpdb;
-		
+	function cleanQueue() {		
 		// clear the process queue
-		$wpdb->query("DELETE FROM {$wpdb->prefix}actionnetwork_queue WHERE processed = 1");
+		$this->db->query("DELETE FROM {$wpdb->prefix}actionnetwork_queue WHERE processed = 1");
 		
 		// remove all API-synced action that are still marked for deletion
 		$this->deleted = $wpdb->query("DELETE FROM {$wpdb->prefix}actionnetwork_actions WHERE an_id != '' AND enabled=-1");
 		
 		// update queue status and cache timestamps options
-		update_option( 'actionnetwork_queue_status', 'empty' );
 		update_option( 'actionnetwork_cache_timestamp', (int) current_time('timestamp') );
 		
 		// set an admin notice
@@ -269,4 +256,105 @@ class Actionnetwork_Sync extends ActionNetworkGroup {
 		update_option('actionnetwork_deferred_admin_notices', $notices);
 	}
 	
+}
+class Actionnetwork_Sync_Status {
+	private $type = '';
+	private $total_action_count = 0;
+	private $processed_action_count = 0;
+	private $updated_action_count = 0;
+	private $inserted_action_count = 0;
+	private $deleted_action_count = 0;
+	private $type_text = '';
+	private $processing_text = '';
+	private $db;
+
+	public function __construct(){
+		global $wpdb;
+		$this->db = $wpdb;
+		$this->update_status();
+		
+	}
+
+	public function get_type(){
+		return $this->type;
+	}
+
+	public function get_total_action_count(){
+		return $this->total_action_count;
+	}
+
+	public function get_processed_action_count(){
+		return $this->processed_action_count;
+	}
+
+	public function get_updated_action_count(){
+		return $this->updated_action_count; 
+	}
+
+	public function get_inserted_action_count(){
+		return $this->inserted_action_count;
+	}
+
+	public function get_deleted_action_count(){
+		return $this->deleted_action_count;
+	}
+
+	public function get_type_text(){
+		return $this->type_text;
+	}
+
+	public function get_processing_text(){
+		return $this->processing_text;
+	}
+
+	public function set_type($type){
+		$this->type = $type;
+	}
+
+	public function set_total_action_count($total_action_count){
+		$this->total_action_count = $total_action_count;
+	}
+
+	public function set_processed_action_count($processed_action_count){
+		$this->processed_action_count = $processed_action_count;
+	}
+
+	public function set_updated_action_count ($updated_action_count) {
+		$this->updated_action_count = $updated_action_count; 
+	}
+
+	public function set_inserted_action_count($inserted_action_count){
+		$this->inserted_action_count = $inserted_action_count;
+	}
+
+	public function set_deleted_action_count($deleted_action_count){
+		$this->inserted_action_count = $deleted_action_count;
+	}
+
+	public function set_type_text($text){
+		$this->type_text = $text;
+	}
+
+	public function set_processing_text($text){
+		$this->processing_text = $text;
+	}
+
+	public function update_status(){
+		$actions_table = $this->db->prefix . "actionnetwork_actions";
+		$queue_table = $this->db->prefix . "actionnetwork_queue";
+		$this->set_total_action_count((int)$this->db->get_var( "SELECT COUNT(*) FROM $queue_table;"));
+		$this->set_processed_action_count((int)$this->db->get_var( "SELECT COUNT(*) FROM $queue_table WHERE processed = 1;"));
+		$this->set_deleted_action_count((int)$this->db->query("DELETE FROM $actions_table WHERE an_id != '' AND enabled=-1;"));
+
+		if ($this->total_action_count === 0) {
+			set_type('empty');
+		} elseif ($this->total_action_count && ($total_action_count === $processed_action_count)) {
+			set_type('complete');
+		} else {
+			set_type('processing');
+		}
+		update_option('actionnetwork_queue_status', get_type());
+		$this->type_text = __("API Sync queue is $this->type", 'actionnetwork');
+		$this->processing_text = __("$this->processed_action_count of $this->total_action_count items processed.", 'actionnetwork');
+	}
 }

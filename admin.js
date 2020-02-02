@@ -119,6 +119,6 @@ jQuery(document).ready(function ($) {
 					$('#actionnetwork-actions-filter').submit();
 				}
 			})
-		}, 3000);
+		}, 100000);
 	}
 });
