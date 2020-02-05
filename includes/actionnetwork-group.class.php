@@ -10,12 +10,17 @@
 class ActionNetworkGroup {
 	private $api_version = '2';
 	private $api_base_url = 'https://actionnetwork.org/api/v2/';
-	private $group = null;
 
 	public function __construct($id = '', $api_key = '', $name = '') {
+		global $wpdb;
 		$this->id = $id;
-		$this->api_key = $api_key;
-		$this->name = $name;
+		if($api_key === ''){
+			$groups_table = $wpdb->prefix . "actionnetwork_groups";
+			$sql = "SELECT * FROM $groups_table WHERE group_id = $id";
+			$group = $wpdb->get_row($sql);
+		}
+		$this->api_key = $api_key !== '' ? $api_key : $group->api_key;
+		$this->name = $name !== '' ? $name : $group->name;
 
 		if(!extension_loaded('curl')) trigger_error('ActionNetwork requires PHP cURL', E_USER_ERROR);
 	}
@@ -71,7 +76,7 @@ class ActionNetworkGroup {
 	}
 	
 	public function getNextPage($response) {
-		return isset($response->_links) && isset($response->_links->next) && isset($response->_links->next->href) ? $response->_links->next->href : false;
+		return isset($response->_links) && isset($response->_links->next) && isset($response->_links->next->href) && $response->page < $response->total_pages ? $response->_links->next->href : false;
 	}
 	
 	// get embed codes
@@ -148,51 +153,43 @@ class ActionNetworkGroup {
 	 * $total : the total number of resources in the page or collection
 	 * $this : if an independent php function, will be passed the ActionNetwork object
 	 */
-	public function traverseCollection($endpoint, $group, $callback) {
+	public function traverseCollection($endpoint, $group) {
 		$response = $this->getCollection($endpoint, $group);
-		$this->traverseCollectionPage($endpoint, $response, $callback);
-		return $response;
+		$return = $this->traverseCollectionPage($endpoint, $response);
+		return $return;
 	}
 
-	public function traverseFullCollection($endpoint, $callback) {
+	public function traverseFullCollection($endpoint) {
 		$response = $this->getCollection($endpoint);
-		$this->traverseCollectionPage($endpoint, $response, $callback);
+		$return[] = $this->traverseCollectionPage($endpoint, $response);
 		if ( isset($response->total_pages) && ($response->total_pages > 1) ) {
-			for ($page=2;$page<=$response->total_pages;$page++) {
+			for ($page;$page<=$response->total_pages;$page++) {
 				$response = $this->getCollection($endpoint, $page);
-				$this->traverseCollectionPage($endpoint, $response, $callback);
+				$return[] = $this->traverseCollectionPage($endpoint, $response);
 			}
 		} else {
 			$next_page = $this->getNextPage($response);
 			while ($next_page) {
 				$response = $this->getCollection($next_page);
-				$this->traverseCollectionPage($endpoint, $response, $callback);
+				$return[] = $this->traverseCollectionPage($endpoint, $response);
 				$next_page = $this->getNextPage($response);
 			}
 		}
+		return $return;
 	}
 
-	private function traverseCollectionPage($endpoint, $response, $callback) {
-		if (!is_string($callback)) { return; }
-		if (method_exists($this, $callback)) {
-			$callback_method = 'object_method';
-		} else {
-			$callback_method = 'function_name';
-			if (!function_exists($callback)) { return; }
-		}
+	private function traverseCollectionPage($endpoint, $response) {
 		$osdi = 'osdi:'.$endpoint;
 		$total = $response->total_records;
 		$index = ($response->page - 1) * $response->per_page + 1;
 		if (isset($response->_embedded->$osdi)) {
 			$collection = $response->_embedded->$osdi;
+			$return;
 			foreach ($collection as $resource) {
-				if ($callback_method == 'object_method') {
-					$this->$callback($resource, $endpoint, $index, $total);
-				} else {
-					$callback($resource, $endpoint, $index, $total, $this);
-				}
+				$return = (object)['resource'=> $resource, 'group_id'=> $this->id, 'endpoint'=> $endpoint,'index'=> $index, 'total'=> $total];
 			}
 		}
+		return $return;
 	}
 
 	// get simple lists (id and title) of petitions, events, fundraising pages, advocacy campaigns, forms and tags

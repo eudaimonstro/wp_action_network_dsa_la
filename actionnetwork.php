@@ -23,7 +23,9 @@ if (!class_exists('ActionNetwork')) {
 if (!class_exists('ActionNetwork_Sync')) {
 	require_once( plugin_dir_path( __FILE__ ) . 'includes/actionnetwork-sync.class.php' );
 	global $actionnetwork_sync;
-	$actionnetwork_sync = new ActionNetwork_Sync();
+	if(!isset($actionnetwork_sync)){
+		$actionnetwork_sync = new ActionNetwork_Sync();
+	}
 }
 
 /**
@@ -646,7 +648,7 @@ add_action( 'actionnetwork_cron_daily', 'actionnetwork_cron_sync' );
  */
 function actionnetwork_process_queue(){
 
-	$sync = new Actionnetwork_Sync();
+	global $actionnetwork_sync;
 	
 	// Don't lock up other requests while processing
 	session_write_close();
@@ -661,8 +663,7 @@ function actionnetwork_process_queue(){
 	$updated = isset($_REQUEST['updated']) ? $_REQUEST['updated'] : 0;
 	$inserted = isset($_REQUEST['inserted']) ? $_REQUEST['inserted'] : 0;
 	$new_only = isset($_REQUEST['new_only']) ? $_REQUEST['new_only'] : 0;
-	$status = get_option( 'actionnetwork_queue_status', 'empty' );
-	
+	$status = $actionnetwork_sync->status->get_type();
 	// error_log( "actionnetwork_process_queue called with the following _REQUEST args:\n\n" . print_r( $_REQUEST, 1) . "\n\nqueue_action: $queue_action\nstatus:$status\n\n", 0 );
 
 	// otherwise delete the ajax token
@@ -670,9 +671,11 @@ function actionnetwork_process_queue(){
 	// only do something if status is empty & queue_action is init,
 	// or status is processing and queue_action is continue
 	if ((($queue_action == 'init') && ($status == 'empty'))||(($queue_action == 'continue') && ($status == 'processing'))) {
-		$sync->new_only = $new_only;
-		if ($queue_action == 'init') { $sync->init(); }
-		$sync->processQueue();
+		$actionnetwork_sync->new_only = $new_only;
+		if ($queue_action == 'init') { 
+			$actionnetwork_sync->init(); 
+		}
+		$actionnetwork_sync->processQueue();
 	}
 		
 		// error_log("New Actionnetwork_Sync created; current state:\n\n" . print_r( $sync, 1), 0 );
@@ -717,6 +720,7 @@ add_action( 'wp_ajax_actionnetwork_get_queue_status', 'actionnetwork_get_queue_s
 function _actionnetwork_admin_handle_actions(){
 
 	global $wpdb;
+	global $actionnetwork_sync;
 	$return = array();
 	
 	if ( !isset($_REQUEST['actionnetwork_admin_action']) || !check_admin_referer(
@@ -739,7 +743,7 @@ function _actionnetwork_admin_handle_actions(){
 
 				// $debug .= "$api_key_name: $actionnetwork_api_key\n";
 				
-				$queue_status = get_option( 'actionnetwork_queue_status', 'empty' );
+				$queue_status = $actionnetwork_sync->status->get_type();
 				$debug .= "queue_status: $queue_status\n";
 
 				$sql = "SELECT EXISTS(SELECT * FROM {$wpdb->prefix}actionnetwork_groups WHERE api_key LIKE \"$group_api_key\") as 'exists';";
@@ -789,6 +793,8 @@ function _actionnetwork_admin_handle_actions(){
 							$group_data['api_key'] = $group_api_key;
 							$group_data['name'] = $group_name;
 							$wpdb->insert($group_table_name, $group_data);
+
+							$g_id = (int)$wpdb->get_var("SELECT group_id FROM $group_table_name WHERE api_key LIKE \"$group_api_key\"");
 					
 							update_option('actionnetwork_cache_timestamp', 0);
 							$action_table_name = $wpdb->prefix . 'actionnetwork_actions';
@@ -797,28 +803,6 @@ function _actionnetwork_admin_handle_actions(){
 		
 							if ($group_api_key) {
 								
-								// initiate a background process by making a call to the "ajax" URL
-								$ajax_url = admin_url( 'admin-ajax.php' );
-								$ajax_url = "http://localhost/wp-admin/admin-ajax.php";
-		
-								// since we're making this call from the server, we can't use a nonce
-								// because the user id would be different. so create a token
-								$timeint = time() / mt_rand( 1, 10 ) * mt_rand( 1, 10 );
-								$timestr = (string) $timeint;
-								$token = md5( $timestr );
-								update_option( 'actionnetwork_ajax_token', $token );
-		
-								$body = array(
-									'action' => 'actionnetwork_process_queue',
-									'queue_action' => 'init',
-									'token' => $token,
-								);
-								$args = array( 'body' => $body, 'timeout' => 1 );
-								wp_remote_post( $ajax_url, $args );
-		
-								$return['queue_status'] = $queue_status;
-								
-								$return['notices']['updated']['sync-started'] = $deleted ? __('API key has been updated, actions synced via previous API key have been 	removed, and sync with new API key has been started', 'actionnetwork') : __('API key has been updated and sync with new API key has 	been started', 'actionnetwork');
 								
 							} else {
 								
@@ -831,13 +815,36 @@ function _actionnetwork_admin_handle_actions(){
 					}
 				}
 			}
+			// initiate a background process by making a call to the "ajax" URL
+			$ajax_url = admin_url( 'admin-ajax.php' );
+			$ajax_url = "http://localhost/wp-admin/admin-ajax.php";
+			
+			// since we're making this call from the server, we can't use a nonce
+			// because the user id would be different. so create a token
+			$timeint = time() / mt_rand( 1, 10 ) * mt_rand( 1, 10 );
+			$timestr = (string) $timeint;
+			$token = md5( $timestr );
+			update_option( 'actionnetwork_ajax_token', $token );
+					
+			$body = array(
+				'action' => 'actionnetwork_process_queue',
+				'queue_action' => 'init',
+				'token' => $token,
+			);
+			$args = array( 'body' => $body, 'timeout' => 1 );
+			wp_remote_post( $ajax_url, $args );
+			
+			$queue_status = $actionnetwork_sync->status->get_type();
+			$return['queue_status'] = $queue_status;
+											
+			$return['notices']['updated']['sync-started'] = __('API key has been updated, actions synced via previous API key have been 	removed, and sync with new API key has been started', 'actionnetwork');
 			break;
 
 		case 'update_sync':
 
 			// error_log( 'actionnetwork_admin_action=update_sync called', 0 );
 		
-			$queue_status = get_option( 'actionnetwork_queue_status', 'empty' );
+			$queue_status = $actionnetwork_sync->status->get_type();
 			if ($queue_status != 'empty') {
 				$return['notices']['error'][] = __( 'Sync currently in progress', 'actionnetwork' );
 			} else {
@@ -862,7 +869,6 @@ function _actionnetwork_admin_handle_actions(){
 				wp_remote_post( $ajax_url, $args );
 				// error_log( "wp_remote_post url called: $ajax_url, args:\n\n".print_r($args,1), 0 );
 				$return['notices']['updated']['sync-started'] = __( 'Sync started', 'actionnetwork' );
-				$queue_status = 'processing';
 				
 			}
 			
