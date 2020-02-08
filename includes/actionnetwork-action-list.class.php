@@ -122,6 +122,16 @@ class Actionnetwork_Action_List extends WP_List_Table {
 		return $title;
 	}
 
+	function column_group($item){
+		global $wpdb;
+
+		$group_id = $item['g_id'];
+		$group_table = $wpdb->prefix . "actionnetwork_groups";
+		$group_name_sql = "SELECT name FROM $group_table WHERE group_id=$group_id";
+		$group_name = $wpdb->get_var($group_name_sql);
+		return $group_name;
+	}
+
 	function column_shortcode($item) {
 		$shortcode = "[actionnetwork id={$item['wp_id']}]";
 		$__copy = __( 'Copy', 'actionnetwork' );

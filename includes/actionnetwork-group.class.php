@@ -31,7 +31,7 @@ class ActionNetworkGroup {
 		$endpoint = str_replace($this->api_base_url,'',$endpoint);
 
 		$ch = curl_init();
-		curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 		curl_setopt($ch, CURLOPT_TIMEOUT, 100);
 		if ($method == "POST") {
 			curl_setopt($ch, CURLOPT_POST, 1);
@@ -161,7 +161,7 @@ class ActionNetworkGroup {
 
 	public function traverseFullCollection($endpoint) {
 		$response = $this->getCollection($endpoint);
-		$return[] = $this->traverseCollectionPage($endpoint, $response);
+		$return = $this->traverseCollectionPage($endpoint, $response);
 		if ( isset($response->total_pages) && ($response->total_pages > 1) ) {
 			for ($page;$page<=$response->total_pages;$page++) {
 				$response = $this->getCollection($endpoint, $page);
@@ -186,7 +186,7 @@ class ActionNetworkGroup {
 			$collection = $response->_embedded->$osdi;
 			$return;
 			foreach ($collection as $resource) {
-				$return = (object)['resource'=> $resource, 'group_id'=> $this->id, 'endpoint'=> $endpoint,'index'=> $index, 'total'=> $total];
+				$return[] = (object)['resource'=> $resource, 'g_id'=> $this->id, 'endpoint'=> $endpoint,'index'=> $index, 'total'=> $total];
 			}
 		}
 		return $return;

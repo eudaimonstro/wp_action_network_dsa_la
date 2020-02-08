@@ -124,6 +124,7 @@ function actionnetwork_install() {
 			title varchar (255) DEFAULT '' NOT NULL,
 			created_date bigint DEFAULT NULL,
 			modified_date bigint DEFAULT NULL,
+			featured_image_url text DEFAULT '' NULL,
 			start_date bigint DEFAULT NULL,
 			browser_url varchar(255) DEFAULT '' NOT NULL,
 			embed_standard_default_styles text NOT NULL,
@@ -687,6 +688,10 @@ add_action( 'wp_ajax_actionnetwork_process_queue', 'actionnetwork_process_queue'
 add_action( 'wp_ajax_nopriv_actionnetwork_process_queue', 'actionnetwork_process_queue' );
 
 function actionnetwork_get_queue_status(){
+
+	global $actionnetwork_sync;
+
+
 	check_ajax_referer( 'actionnetwork_get_queue_status', 'actionnetwork_ajax_nonce' );
 	$syncing_results = [];
 	$sync_status['text'] = __('API Sync queue is '.$sync_status['status'].'.', 'actionnetwork');
@@ -745,7 +750,7 @@ function _actionnetwork_admin_handle_actions(){
 				
 				$queue_status = $actionnetwork_sync->status->get_type();
 				$debug .= "queue_status: $queue_status\n";
-
+				if($group_api_key === ""){continue;}
 				$sql = "SELECT EXISTS(SELECT * FROM {$wpdb->prefix}actionnetwork_groups WHERE api_key LIKE \"$group_api_key\") as 'exists';";
 				$group_exists = $wpdb->get_var( $sql );
 				
@@ -762,27 +767,21 @@ function _actionnetwork_admin_handle_actions(){
 						
 						$group_api_key_is_valid = false;
 						
-						// empty API key is "valid"
-						if (!$group_api_key) {
-							$group_api_key_is_valid = true;
-						} else {
+
+						// validate API key
+						$group = new ActionNetworkGroup('', $group_api_key, $_REQUEST['actionnetwork-group-name'][$i]);
+						$validate = $group->call('petitions');
 						
-							// validate API key
-							$group = new ActionNetworkGroup('', $group_api_key, $_REQUEST['actionnetwork-group-name'][$i]);
-							$validate = $group->call('petitions');
-						
-							$debug .= "validation returned:\n\n" . print_r($validate,1) . "\n\n";
+						$debug .= "validation returned:\n\n" . print_r($validate,1) . "\n\n";
 							
-							if (isset($validate->error)) {
-								if (substr($validate->error,0,30) == 'API Key invalid or not present') {
-									$return['notices']['error'][] = __( 'Invalid API key:', 'actionnetwork' ).' '.$actionnetwork_api_key;
-								} else {
-									$return['notices']['error'][] = __( 'Error validating API key:', 'actionnetwork' ).' '.$actionnetwork_api_key;
-								}
+						if (isset($validate->error)) {
+							if (substr($validate->error,0,30) == 'API Key invalid or not present') {
+								$return['notices']['error'][] = __( 'Invalid API key:', 'actionnetwork' ).' '.$actionnetwork_api_key;
 							} else {
-								$group_api_key_is_valid = true;
+								$return['notices']['error'][] = __( 'Error validating API key:', 'actionnetwork' ).' '.$actionnetwork_api_key;
 							}
-							
+						} else {
+							$group_api_key_is_valid = true;
 						}
 						
 						$debug .= $group_api_key_is_valid ? "actionnetwork_api_key is valid\n" : "actionnetwork_api_key is not valid\n";

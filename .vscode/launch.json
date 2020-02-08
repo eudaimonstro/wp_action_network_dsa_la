@@ -6,10 +6,13 @@
         "type": "php",
         "request": "launch",
         "port": 9000,
-        "log": true,
         "externalConsole": false,
         "pathMappings": {
           "/var/www/html": "/home/steve/workspace/new-dsa-la/wp",
+        },
+        "xdebugSettings": {
+          "max_data": 8192,
+          "max_children": 5,
         }
       }
     ]

@@ -355,10 +355,11 @@ Class ActionNetworkAction{
 	public $embed_standard_default_styles;
 	public $embed_full_default_styles;
 	public $hidden;
+	public $featured_image_url;
 
 	public function __construct($data){
 		$this->an_id = $this->getId($data->resource);
-		$this->g_id = isset($data->group_id) ? $data->group_id : '';
+		$this->g_id = isset($data->g_id) ? $data->g_id : '';
 		$this->created_date = isset($data->resource->created_date) ? strtotime($data->resource->created_date) : null;
 		$this->modified_date = isset($data->resource->modified_date) ? strtotime($data->resource->modified_date) : null;
 		$this->start_date = isset($data->resource->start_date) ? strtotime($data->resource->start_date) : null;
@@ -375,12 +376,13 @@ Class ActionNetworkAction{
 		if (isset($data->resource->status) && ($data->resource->status == 'cancelled')) {
 			$this->enabled = 0;
 		}
-		if ($data->resource->start_date && ($data->resource->start_date < (int) current_time('timestamp'))) {
+		if ($data->resource->start_date && (strtotime($data->resource->start_date) < (int) current_time('timestamp'))) {
 			$this->enabled = 0;
 		}
 	
 		// use endpoint (minus pluralizing s) to set $data['type']
 		$this->type = substr($data->endpoint,0,strlen($data->endpoint) - 1);
+		$this->featured_image_url = isset($data->resource->featured_image_url) && $data->resource->featured_image_url !== "" ? $data->featured_image_url : "";
 	}
 
 	public function getId($data){
