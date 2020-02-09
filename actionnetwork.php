@@ -793,11 +793,12 @@ function _actionnetwork_admin_handle_actions(){
 							$group_data['name'] = $group_name;
 							$wpdb->insert($group_table_name, $group_data);
 
-							$g_id = (int)$wpdb->get_var("SELECT group_id FROM $group_table_name WHERE api_key LIKE \"$group_api_key\"");
+							$g_id = (int)$wpdb->get_var("SELECT id FROM $group_table_name WHERE api_key LIKE \"$group_api_key\"");
 					
 							update_option('actionnetwork_cache_timestamp', 0);
 							$action_table_name = $wpdb->prefix . 'actionnetwork_actions';
 							$action_conditions['an_id'] = '%_%';
+							$action_conditions['g_id'] = $g_id;
 							$deleted = $wpdb->delete($action_table_name, $action_conditions);
 		
 							if ($group_api_key) {

@@ -127,7 +127,7 @@ class Actionnetwork_Action_List extends WP_List_Table {
 
 		$group_id = $item['g_id'];
 		$group_table = $wpdb->prefix . "actionnetwork_groups";
-		$group_name_sql = "SELECT name FROM $group_table WHERE group_id=$group_id";
+		$group_name_sql = "SELECT name FROM $group_table WHERE id=$group_id";
 		$group_name = $wpdb->get_var($group_name_sql);
 		return $group_name;
 	}

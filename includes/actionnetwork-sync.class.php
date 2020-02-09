@@ -20,7 +20,7 @@ class Actionnetwork_Sync {
 
 		$group_array = $wpdb->get_results($groups_sql, ARRAY_A);
 		foreach($group_array as $group){
-			$this->groups[] = new ActionNetworkGroup($group['group_id'], $group['api_key'], $group['name']);
+			$this->groups[] = new ActionNetworkGroup($group['id'], $group['api_key'], $group['name']);
 		}
 		$this->processStartTime = time();
 		$this->status = new Actionnetwork_Sync_Status();
